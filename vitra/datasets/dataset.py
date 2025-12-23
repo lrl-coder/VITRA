@@ -286,7 +286,8 @@ class MultipleWeightedDataset(Dataset):
         datasets = []
         weights = []
         for dataset_name, weight in dataset_weight_list:
-            overwatch.info(f"Loading dataset: {dataset_name}", ctx_level=1)
+            if overwatch.rank() == 0:
+                overwatch.info(f"Loading dataset: {dataset_name}", ctx_level=1)
             # Auto-detect data_type based on dataset_name
             if dataset_name.startswith('robo_'):
                 data_type = 'robot'

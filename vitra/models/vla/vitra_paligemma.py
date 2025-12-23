@@ -74,12 +74,14 @@ class VITRA_Paligemma(nn.Module):
         # with the word embedding parameter corresponding to the specified `cognition_token_id`. 
 
         if untied_cognition_token:
-            overwatch.info(f"Using separate cognition token")
-            overwatch.info(f"Cognition token id: {self.cognition_token_id}")
+            if overwatch.rank() == 0:
+                overwatch.info(f"Using separate cognition token")
+                overwatch.info(f"Cognition token id: {self.cognition_token_id}")
             init_id = self.configs.get("cognition_token_init_id", None)
             if init_id is None:
                 init_id = self.cognition_token_id
-            overwatch.info(f"Init cognition token with id={init_id}")
+            if overwatch.rank() == 0:
+                overwatch.info(f"Init cognition token with id={init_id}")
             ebd = self.model.get_input_embeddings().weight.data[init_id]
             self.cognition_token = nn.Parameter(ebd.clone())
         else:
