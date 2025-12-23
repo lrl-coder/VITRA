@@ -56,7 +56,7 @@ class EpisodicDatasetCore(object):
         action_type="angle", 
         use_rel=False, 
         upsample_factor=1.0,
-        target_image_width=224,
+        target_image_height=224,
         clip_len=2000,
         state_mask_prob=0.1,
         action_past_window_size=0,
@@ -85,7 +85,7 @@ class EpisodicDatasetCore(object):
         self.global_data_statistics = None
         self.clip_len = clip_len  # Video clip length in frames
         self.augmentation = augmentation
-        self.target_image_width = target_image_width
+        self.target_image_height = target_image_height
         self.flip_augmentation = flip_augmentation
         self.set_none_ratio = set_none_ratio
         self.action_type = action_type  # "angle" (Euler angles) or "keypoints" (3D joint positions)
@@ -680,7 +680,7 @@ class EpisodicDatasetCore(object):
             try:
                 # randomly sample aspect ratio for augmentation
                 aspect_ratio = np.exp(random.uniform(np.log(1.0), np.log(2.0)))
-                target_size = (int(self.target_image_width * aspect_ratio), self.target_image_width)  # (W, H)
+                target_size = (int(self.target_image_height * aspect_ratio), self.target_image_height)  # (W, H)
                 augment_params = {
                     'tgt_aspect': aspect_ratio, 
                     'flip_augmentation': self.flip_augmentation, 

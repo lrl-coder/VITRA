@@ -177,6 +177,7 @@ def experiment(variant):
         rel_mode=variant["train_dataset"].get('rel_mode', "step"),
         clip_len=variant["train_dataset"].get('clip_len', None),
         state_mask_prob=variant["train_dataset"].get('state_mask_prob', 0.1),
+        target_image_height=variant["train_dataset"].get('target_image_height', 224),
     )
     
     # === Training Strategy Setup ===
@@ -275,6 +276,7 @@ def experiment(variant):
         dataloader,
         metrics,
         save_interval=variant["save_steps"],
+        epoch_save_interval=variant.get("epoch_save_interval", 100000),
         start_global_step=resume_step,
         start_epoch=resume_epoch,
     )
@@ -369,7 +371,8 @@ def update_configs(configs, args):
     # Update remaining arguments (handles both flat and nested dictionaries)
     for k, v in args.items():
         if k not in configs:
-            print(f"{k} not in config. The value is {v}.")
+            if overwatch.rank() == 0:
+                print(f"{k} not in config. The value is {v}.")
             configs[k] = v
         elif isinstance(v, dict):
             for sub_k, sub_v in v.items():

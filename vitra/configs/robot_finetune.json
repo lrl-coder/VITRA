@@ -15,6 +15,7 @@
     "wandb_project": "vitra_paligemma2_robotfinetune",
     "wandb_entity": "",
     "save_steps": 5000,
+    "epoch_save_interval": 100000,
     "use_bf16": true,
     "use_fov": true,
     "untied_cognition_token": true,

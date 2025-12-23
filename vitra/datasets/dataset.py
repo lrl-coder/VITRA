@@ -19,12 +19,16 @@ from tqdm import tqdm
 from vitra.datasets.data_mixture import HAND_MIXTURES
 from vitra.datasets.robot_dataset import RoboDatasetCore
 from vitra.datasets.human_dataset import EpisodicDatasetCore
+from vitra.utils.overwatch import initialize_overwatch
+
+# Initialize Overwatch =>> Wraps `logging.Logger`
+overwatch = initialize_overwatch(__name__)
 
 class FrameDataset(Dataset):
     def __init__(self, dataset_folder, dataset_name,
                  image_past_window_size=0, image_future_window_size=0, action_past_window_size=0, action_future_window_size=0,
                  augmentation=False, normalization=True, processor=None, flip_augmentation=1.0, set_none_ratio=0.0,
-                 action_type="angle", use_rel=False, rel_mode='step', load_images=True, data_type='human', clip_len=None, state_mask_prob=0.1):
+                 action_type="angle", use_rel=False, rel_mode='step', load_images=True, data_type='human', clip_len=None, state_mask_prob=0.1, target_image_height=224):
         # only support image_past_window_size=0 now (in the post transform)
         """Both past and future window size does not include the current frame"""
         self.image_past_window_size = image_past_window_size
@@ -46,7 +50,7 @@ class FrameDataset(Dataset):
         if dataset_name == 'ego4d_cooking_and_cleaning':
             annotation_file = os.path.join(dataset_folder, "Annotation/ego4d_cooking_and_cleaning/episode_frame_index.npz")
             label_folder = os.path.join(dataset_folder, "Annotation/ego4d_cooking_and_cleaning/episodic_annotations")
-            statistics_path = os.path.join(dataset_folder, "Annotation/statistics/ego4d_angle_statistics.json")
+            statistics_path = os.path.join(dataset_folder, "Annotation/statistics/ego4d_cooking_and_cleaning_angle_statistics.json")
             video_root = os.path.join(dataset_folder, 'Video/Ego4D_root')
         elif dataset_name == 'egoexo4d':
             annotation_file = os.path.join(dataset_folder, "Annotation/egoexo4d/episode_frame_index.npz")
@@ -64,9 +68,9 @@ class FrameDataset(Dataset):
             statistics_path = os.path.join(dataset_folder, "Annotation/statistics/ssv2_angle_statistics.json")
             video_root = os.path.join(dataset_folder, 'Video/Somethingsomething-v2_root')
         elif dataset_name == 'ego4d_other':
-            annotation_file = os.path.join(dataset_folder, "Annotation/ego4d_cooking_and_cleaning/episode_frame_index.npz")
-            label_folder = os.path.join(dataset_folder, "Annotation/ego4d_cooking_and_cleaning/episodic_annotations")
-            statistics_path = os.path.join(dataset_folder, "Annotation/statistics/ego4d_angle_statistics.json")
+            annotation_file = os.path.join(dataset_folder, "Annotation/ego4d_other/episode_frame_index.npz")
+            label_folder = os.path.join(dataset_folder, "Annotation/ego4d_other/episodic_annotations")
+            statistics_path = os.path.join(dataset_folder, "Annotation/statistics/ego4d_other_angle_statistics.json")
             video_root = os.path.join(dataset_folder, 'Video/Ego4D_root')
         elif dataset_name == 'robo_dataset':
             root_dir = os.path.join(dataset_folder, "TeleData")
@@ -100,7 +104,8 @@ class FrameDataset(Dataset):
                 image_past_window_size=self.image_past_window_size,
                 image_future_window_size=self.image_future_window_size,
                 rel_mode=self.rel_mode,  # 'step'
-                load_images=self.load_images
+                load_images=self.load_images,
+                target_image_height = target_image_height
             )
         else:
             self.episodic_dataset_core = RoboDatasetCore(
@@ -183,7 +188,7 @@ class MultipleWeightedDataset(Dataset):
         self._accumulate_lengths = [0]
         for dataset in datasets:
             self._accumulate_lengths.append(self._accumulate_lengths[-1] + len(dataset))
-        print("Dataset lengths:", [len(dataset) for dataset in datasets])
+        overwatch.info(f"Dataset lengths: {[len(dataset) for dataset in datasets]}", ctx_level=1)
     
     def __len__(self):
         return self._length
@@ -271,7 +276,7 @@ class MultipleWeightedDataset(Dataset):
     def load_datasets(cls, dataset_folder, data_mix,
                       image_past_window_size=0, image_future_window_size=0, action_past_window_size=0, action_future_window_size=0,
                       augmentation=False, normalization=True, processor = None, flip_augmentation=1.0, set_none_ratio=0.0,
-                      action_type="angle", use_rel=False, rel_mode='step', clip_len=None, state_mask_prob=0.1):
+                      action_type="angle", use_rel=False, rel_mode='step', clip_len=None, state_mask_prob=0.1, target_image_height=224):
         dataset_weight_list = []
         if data_mix in HAND_MIXTURES:
             dataset_weight_list = HAND_MIXTURES[data_mix]
@@ -281,7 +286,7 @@ class MultipleWeightedDataset(Dataset):
         datasets = []
         weights = []
         for dataset_name, weight in dataset_weight_list:
-            print("Loading dataset:", dataset_name)
+            overwatch.info(f"Loading dataset: {dataset_name}", ctx_level=1)
             # Auto-detect data_type based on dataset_name
             if dataset_name.startswith('robo_'):
                 data_type = 'robot'
@@ -291,7 +296,7 @@ class MultipleWeightedDataset(Dataset):
                                    image_past_window_size, image_future_window_size, 
                                    action_past_window_size, action_future_window_size,
                                    augmentation, normalization, processor, flip_augmentation, set_none_ratio,
-                                   action_type, use_rel, rel_mode, load_images=True, data_type=data_type, clip_len=clip_len, state_mask_prob=state_mask_prob)
+                                   action_type, use_rel, rel_mode, load_images=True, data_type=data_type, clip_len=clip_len, state_mask_prob=state_mask_prob, target_image_height=target_image_height)
             datasets.append(dataset)
             weights.append(weight)
         data_statistics = cls.weighted_average_statistics(datasets, weights)
@@ -422,7 +427,8 @@ class MultipleDatasetWeightedDistributedBatchSampler(torch.utils.data.BatchSampl
             dataset_count[di] += 1
         s = sum(dataset_count)
         for i in range(len(dataset_count)):
-            print(f"Dataset {i} count: {dataset_count[i]}, ratio: {dataset_count[i] / s:.4f}")
+            if self.rank == 0:
+                overwatch.info(f"In rank {self.rank}, Dataset {i} count: {dataset_count[i]}, ratio: {dataset_count[i] / s:.4f}", ctx_level=1)
 
     def __iter__(self):
         dataset_index_list = self.prepare_indices()
@@ -441,13 +447,16 @@ class MultipleDatasetWeightedDistributedBatchSampler(torch.utils.data.BatchSampl
         assert len(dataset_index_list) == self.num_iters * self.batch_size
 
         self.dataset_statistics(dataset_index_list)
-        print(f"Batch Sampler in rank {self.rank} start from {self.step} to {self.num_iters} at epoch {self.epoch}")
-        print(f"First batch: {dataset_index_list[self.step * self.batch_size:(self.step + 1) * self.batch_size]}")
+        if self.rank == 0:
+            overwatch.info(f"Batch Sampler in rank {self.rank} start from {self.step} to {self.num_iters} at epoch {self.epoch}", ctx_level=1)
+        # print(f"First batch: {dataset_index_list[self.step * self.batch_size:(self.step + 1) * self.batch_size]}")
+
         for i in range(self.step, self.num_iters):
             # print("Iterating", i, dataset_index_list[i * self.batch_size:(i + 1) * self.batch_size])
             yield dataset_index_list[i * self.batch_size:(i + 1) * self.batch_size]
         self.set_epoch(self.epoch + 1)
-        print("Epoch", self.epoch, "completed")
+        if self.rank == 0:
+            overwatch.info(f"Epoch {self.epoch} completed in rank {self.rank}", ctx_level=1)
 
     def __len__(self):
         return self.num_iters

@@ -13,6 +13,7 @@
     "wandb_project": "vitra_paligemma2_humanpretrain",
     "wandb_entity": "",
     "save_steps": 5000,
+    "epoch_save_interval": 1,
     "total_batch_size": 512,
     "use_bf16": true,
     "use_fov": true,
