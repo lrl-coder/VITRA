@@ -9,6 +9,9 @@ def build_vlm(vlm_config):
     model_type = vlm_config.get("type", "AutoModel")
     if model_name == "paligemma":
         from transformers import PaliGemmaProcessor, PaliGemmaForConditionalGeneration
+        print(f'------{model_path}')
+        model_path = './weights/paligemma2-3b-mix-224'
+        print(f'------{model_path}')
 
         model = PaliGemmaForConditionalGeneration.from_pretrained(
             model_path,
