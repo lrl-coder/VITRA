@@ -120,7 +120,7 @@ class OutputConfig:
     # Output structure
     save_episodic_annotations: bool = True
     save_frame_index: bool = True
-    save_visualization: bool = False
+    save_visualization: bool = True
     
     # Compression
     compress_output: bool = True

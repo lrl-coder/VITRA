@@ -17,7 +17,8 @@ from .stages import (
     VideoProcessor, 
     HandReconstructionStage, 
     ActionSegmentationStage, 
-    LanguageAnnotationStage
+    LanguageAnnotationStage,
+    VisualizationStage
 )
 
 # Configure logging
@@ -50,6 +51,7 @@ class DatasetBuilder:
         self.hand_recon = HandReconstructionStage(self.config.hand_recon, self.logger)
         self.segmenter = ActionSegmentationStage(self.config.segmentation, self.logger)
         self.annotator = LanguageAnnotationStage(self.config.annotation, self.logger)
+        self.visualizer = VisualizationStage(self.config.output, self.logger)
         
         # Initialize all stages (load models etc)
         self._init_stages()
@@ -59,12 +61,14 @@ class DatasetBuilder:
         self.hand_recon.initialize()
         self.segmenter.initialize()
         self.annotator.initialize()
+        self.visualizer.initialize()
 
     def pipleline_cleanup(self):
         self.video_processor.cleanup()
         self.hand_recon.cleanup()
         self.segmenter.cleanup()
         self.annotator.cleanup()
+        self.visualizer.cleanup()
 
     def process_directory(self, input_dir: str, output_dir: str):
         """
@@ -110,7 +114,12 @@ class DatasetBuilder:
         # --- Stage 4: Annotation ---
         final_data = self.annotator.process(segmented_data)
         
-        # --- Stage 5: Save Output ---
+        # --- Stage 5: Visualization (Optional) ---
+        # Pass output_root to visualization stage
+        final_data['output_dir'] = output_root  
+        self.visualizer.process(final_data)
+        
+        # --- Stage 6: Save Output ---
         self._save_results(final_data, output_root, dataset_name, video_name)
         
         self.logger.info(f"Completed {video_path.name}")

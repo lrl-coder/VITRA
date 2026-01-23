@@ -7,11 +7,13 @@ Each stage is a self-contained module that can be run independently or as part o
 from .hand_reconstruction import HandReconstructionStage
 from .action_segmentation import ActionSegmentationStage
 from .language_annotation import LanguageAnnotationStage
+from .visualization import VisualizationStage
 from .video_processor import VideoProcessor
 
 __all__ = [
     "HandReconstructionStage",
     "ActionSegmentationStage", 
     "LanguageAnnotationStage",
+    "VisualizationStage",
     "VideoProcessor",
 ]
