@@ -21,7 +21,7 @@ from .base import TimedStage
 from ..config import OutputConfig
 
 try:
-    from visualization.visualize_core import HandConfig, HandVisualizer, Renderer, process_single_hand_labels
+    from visualization.visualize_core import Config as HandConfig, HandVisualizer, Renderer, process_single_hand_labels
     import torch
     HAS_3D_VIS = True
 except ImportError:
