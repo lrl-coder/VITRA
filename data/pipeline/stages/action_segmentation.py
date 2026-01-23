@@ -192,10 +192,20 @@ class ActionSegmentationStage(TimedStage):
             # If segment is too long, it might be holding/idle or a long motion without clear minima.
             # For "Atomic" actions, extremely long segments usually imply we missed a split
             # or it is a long idle period. 
-            # The paper implies simple splitting. We will keep it but maybe warn or flag.
             if duration > max_len:
-                 # Optional: could split equally or discard. For now, keep it.
-                 pass
+                 # Force split long segments into equal parts
+                 # This prevents "runaway" segments that last until the end of the video
+                 num_splits = int(np.ceil(duration / max_len))
+                 split_len = duration / num_splits # Use float division for even splits
+                 
+                 for k in range(num_splits):
+                     s = start + int(k * split_len)
+                     e = start + int((k + 1) * split_len)
+                     # Ensure we don't go out of bounds (though int conversion handles it mostly)
+                     e = min(e, end)
+                     if s < e:
+                         segments.append((s, e))
+                 continue
                  
             segments.append((start, end))
             
