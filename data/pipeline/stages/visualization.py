@@ -133,6 +133,10 @@ class VisualizationStage(TimedStage):
                 if self.enable_3d:
                     # If 3D enabled, frame is RGB from renderer, convert to BGR for OpenCV
                     vis_frame = cv2.cvtColor(vis_frame, cv2.COLOR_RGB2BGR)
+                else:
+                    # If 3D is disabled, draw 2D hand keypoints/boxes as fallback
+                    if recon:
+                        self._draw_2d_hands(vis_frame, recon, i)
                 
                 # HUD
                 active_epis = frame_epis.get(i, [])
@@ -231,6 +235,82 @@ class VisualizationStage(TimedStage):
                             0.8, color, 2, cv2.LINE_AA)
                 
                 y_text += line_height
+
+    def _draw_2d_hands(self, img: np.ndarray, recon: Dict[str, Any], frame_idx: int):
+        """Draw 2D hand keypoints and bounding boxes as a fallback when 3D rendering is unavailable."""
+        h, w = img.shape[:2]
+        
+        # Get intrinsics for projection
+        K = None
+        if 'intrinsics' in recon:
+            K = recon['intrinsics']
+        elif 'fov_x' in recon:
+            fov_x = recon['fov_x']
+            f = w / (2 * np.tan(np.deg2rad(fov_x) / 2))
+            K = np.array([
+                [f, 0, w/2],
+                [0, f, h/2],
+                [0, 0, 1]
+            ])
+        else:
+            # No intrinsics available, skip 2D projection
+            return
+        
+        # Draw for each hand
+        for hand_side in ['left', 'right']:
+            hand_data = recon.get(hand_side, {})
+            if frame_idx not in hand_data:
+                continue
+                
+            data = hand_data[frame_idx]
+            color = self.colors.get(hand_side, (255, 255, 255))
+            
+            # Draw wrist center (translation point)
+            if 'transl' in data:
+                transl = data['transl']  # 3D position in camera space
+                if isinstance(transl, torch.Tensor):
+                    transl = transl.cpu().numpy()
+                
+                # Project to 2D
+                pt_3d = transl.reshape(3, 1)
+                pt_2d_h = K @ pt_3d
+                if pt_2d_h[2] > 0:  # Check if in front of camera
+                    x = int(pt_2d_h[0] / pt_2d_h[2])
+                    y = int(pt_2d_h[1] / pt_2d_h[2])
+                    
+                    if 0 <= x < w and 0 <= y < h:
+                        # Draw wrist point
+                        cv2.circle(img, (x, y), 8, color, -1)
+                        cv2.circle(img, (x, y), 10, (0, 0, 0), 2)
+                        
+                        # Draw hand label
+                        label = hand_side[0].upper()
+                        cv2.putText(img, label, (x + 15, y - 15), 
+                                  cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3, cv2.LINE_AA)
+                        cv2.putText(img, label, (x + 15, y - 15), 
+                                  cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
+            
+            # Draw bounding box if available
+            if 'bbox' in data:
+                bbox = data['bbox']
+                if isinstance(bbox, torch.Tensor):
+                    bbox = bbox.cpu().numpy()
+                
+                # bbox format: [x1, y1, x2, y2] or [x, y, w, h]
+                if len(bbox) >= 4:
+                    x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+                    cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+                    
+                    # Draw corner markers
+                    corner_size = 10
+                    cv2.line(img, (x1, y1), (x1 + corner_size, y1), color, 3)
+                    cv2.line(img, (x1, y1), (x1, y1 + corner_size), color, 3)
+                    cv2.line(img, (x2, y1), (x2 - corner_size, y1), color, 3)
+                    cv2.line(img, (x2, y1), (x2, y1 + corner_size), color, 3)
+                    cv2.line(img, (x1, y2), (x1 + corner_size, y2), color, 3)
+                    cv2.line(img, (x1, y2), (x1, y2 - corner_size), color, 3)
+                    cv2.line(img, (x2, y2), (x2 - corner_size, y2), color, 3)
+                    cv2.line(img, (x2, y2), (x2, y2 - corner_size), color, 3)
 
     def _render_3d_batch(self, frames: List[np.ndarray], recon: Dict[str, Any], episodes: List[Dict]) -> List[np.ndarray]:
         """
