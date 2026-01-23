@@ -196,10 +196,15 @@ class ActionSegmentationStage(TimedStage):
             if len(seg_traj) > 1:
                 path_length = np.sum(np.linalg.norm(np.diff(seg_traj, axis=0), axis=1))
             
+            # self.logger.info(f"Segment {start}-{end}: Path Length = {path_length:.4f}")
+
             if duration <= max_len:
                 # Only filter regular segments here. Split segments need checking individually.
                 if path_length < self.config.min_motion_threshold:
-                    continue
+                     self.logger.info(f"Skipping segment {start}-{end} (Duration: {duration}) due to low motion: {path_length:.4f} < {self.config.min_motion_threshold}")
+                     continue
+                else:
+                     self.logger.info(f"Keeping segment {start}-{end}: Motion {path_length:.4f}")
 
             # If segment is too long, it might be holding/idle or a long motion without clear minima.
             if duration > max_len:
@@ -221,6 +226,9 @@ class ActionSegmentationStage(TimedStage):
                          
                          if sub_path_len >= self.config.min_motion_threshold:
                              segments.append((s, e))
+                             self.logger.info(f"Keeping split segment {s}-{e}: Motion {sub_path_len:.4f}")
+                         else:
+                             self.logger.info(f"Skipping split segment {s}-{e}: Motion {sub_path_len:.4f} < {self.config.min_motion_threshold}")
                  continue
                  
             segments.append((start, end))
