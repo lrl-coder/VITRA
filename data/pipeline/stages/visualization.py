@@ -100,72 +100,58 @@ class VisualizationStage(TimedStage):
         h, w = frames[0].shape[:2]
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(str(output_path), fourcc, fps, (w, h))
-        
-        # Pre-compute episode lookups for fast access
-        frame_epis = {}
-        for ep in episodes:
-            for f_idx in range(ep['start_frame'], ep['end_frame']):
-                if f_idx not in frame_epis:
-                    frame_epis[f_idx] = []
-                frame_epis[f_idx].append(ep)
-        
-        # Render loop
-        for i, frame in enumerate(frames):
-            vis_frame = frame.copy()
-            
-            # 1. Draw Hand Centers (Trajectory) if available
-            # Note: Full MANO mesh rendering requires camera projection logic
-            # Here we visualize simple centers if 'transl' is available relative to something, 
-            # Or simpler: just the text and segmentation.
-            # To do 3D projection we need intrinsics and world-2-cam. 
-            # Assuming 'recon' has world space, we need extrinsics.
-            # For simplicity in this stage, we skip 3D projection unless explicitly requested, 
-            # as it requires reimplementing the projection logic from human_dataset.
-            
-            # 2. Draw Episode Info
-            active_epis = frame_epis.get(i, [])
-            self._draw_hud(vis_frame, active_epis, i, len(frames))
-            
-            # Append if not 3D (logic handled later)
-            # out.write(vis_frame) # Moved out
 
-        # Perform 3D Rendering Batch if enabled
-        final_frames = frames 
-        if self.enable_3d and recon:
-            self.logger.info("Rendering 3D hand meshes...")
-            try:
-                final_frames = self._render_3d_batch(frames, recon, episodes)
-            except Exception as e:
-                self.logger.error(f"3D Rendering failed: {e}")
-                import traceback
-                self.logger.error(traceback.format_exc())
-                final_frames = frames
+        try:
+            # Pre-compute episode lookups for fast access
+            frame_epis = {}
+            for ep in episodes:
+                for f_idx in range(ep['start_frame'], ep['end_frame']):
+                    if f_idx not in frame_epis:
+                        frame_epis[f_idx] = []
+                    frame_epis[f_idx].append(ep)
+            
+            # Simple loop to ensure frame_epis is ready or for simple HUD pass if needed
+            # (Currently logic is strictly sequential: 3D render -> Draw HUD -> Write)
 
-        # Write frames to video
-        for i, frame in enumerate(final_frames):
-            # If 3D rendering was done, frame is already processed. 
-            # But we still need to add HUD if it wasn't added during 3D pass.
-            # Actually, let's keep HUD drawing on the 'vis_frame' before 3D if possible, 
-            # or draw HUD on top of 3D. 
-            # _render_3d_batch returns new frames (RGB). 
-            # Let's assume we want HUD on top.
+            # Perform 3D Rendering Batch if enabled
+            final_frames = frames 
+            if self.enable_3d and recon:
+                self.logger.info("Rendering 3D hand meshes...")
+                try:
+                    final_frames = self._render_3d_batch(frames, recon, episodes)
+                except Exception as e:
+                    self.logger.error(f"3D Rendering failed: {e}")
+                    import traceback
+                    self.logger.error(traceback.format_exc())
+                    final_frames = frames
+
+            # Write frames to video
+            for i, frame in enumerate(final_frames):
+                # If 3D rendering was done, frame is already processed. 
+                
+                vis_frame = frame.copy()
+                if self.enable_3d:
+                    # If 3D enabled, frame is RGB from renderer, convert to BGR for OpenCV
+                    vis_frame = cv2.cvtColor(vis_frame, cv2.COLOR_RGB2BGR)
+                
+                # HUD
+                active_epis = frame_epis.get(i, [])
+                self._draw_hud(vis_frame, active_epis, episodes, i, len(frames))
+                out.write(vis_frame)
+                
+        except Exception as e:
+            self.logger.error(f"Error during visualization processing: {e}")
+            raise e
+        finally:
+            out.release()
+            self.logger.info(f"Video writer released.")
             
-            vis_frame = frame.copy()
-            if self.enable_3d:
-                # If 3D enabled, frame is RGB from renderer, convert to BGR for OpenCV
-                vis_frame = cv2.cvtColor(vis_frame, cv2.COLOR_RGB2BGR)
-            
-            # HUD
-            active_epis = frame_epis.get(i, [])
-            self._draw_hud(vis_frame, active_epis, i, len(frames))
-            out.write(vis_frame)
-            
-        out.release()
-        self.logger.info(f"Visualization saved.")
+        self.logger.info(f"Visualization saved to {output_path}")
         
         return input_data
 
-    def _draw_hud(self, img: np.ndarray, episodes: List[Dict], frame_idx: int, total_frames: int):
+    def _draw_hud(self, img: np.ndarray, active_episodes: List[Dict], all_episodes: List[Dict], frame_idx: int, total_frames: int):
+        """Draw Heads-Up Display with text and timeline."""
         """Draw Heads-Up Display with text and timeline."""
         h, w = img.shape[:2]
         
@@ -181,16 +167,40 @@ class VisualizationStage(TimedStage):
         cv2.circle(img, (progress_x, y_bar + bar_h//2), 6, self.colors['timeline_active'], -1)
         
         # Draw Segmentation Blocks on timeline
-        # (This might be expensive to loop all eps every frame, but okay for rendering)
-        # Optimization: Only draw nearby or skip this visualization if too slow
-        
+        # Draw all episodes to show the structure
+        for ep in all_episodes:
+            start_f = max(0, ep['start_frame'])
+            end_f = min(total_frames, ep['end_frame'])
+            
+            x1 = int(w * (start_f / total_frames))
+            x2 = int(w * (end_f / total_frames))
+            
+            # Ensure at least 1px width
+            if x2 <= x1: x2 = x1 + 1
+            
+            hand = ep.get('anno_type', 'right')
+            color = self.colors.get(hand, (200, 200, 200))
+            
+            # Split bar height: Top half for Left, Bottom half for Right to handle overlap
+            if hand == 'left':
+                y_box_start = y_bar
+                y_box_end = y_bar + bar_h // 2
+            else:
+                y_box_start = y_bar + bar_h // 2
+                y_box_end = y_bar + bar_h
+                
+            # Draw block
+            cv2.rectangle(img, (x1, y_box_start), (x2, y_box_end), color, -1)
+            # Draw tiny border
+            cv2.rectangle(img, (x1, y_box_start), (x2, y_box_end), (0, 0, 0), 1)
+
         # 2. Text Annotations (Top)
-        if episodes:
+        if active_episodes:
             # Stack text lines
             y_text = 40
             line_height = 35
             
-            for ep in episodes:
+            for ep in active_episodes:
                 hand = ep['anno_type']
                 # Get description
                 # Note: 'text' field format from LanguageAnnotationStage: 
