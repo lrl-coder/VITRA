@@ -327,7 +327,8 @@ class VisualizationStage(TimedStage):
             # Initialize arrays
             transl = np.zeros((T, 3), dtype=np.float32)
             global_orient = np.eye(3).reshape(1, 3, 3).repeat(T, axis=0) # (T, 3, 3)
-            hand_pose = np.eye(3).reshape(1, 15, 3, 3).repeat(T, axis=0) # (T, 15, 3, 3)
+            # Create 15 identity matrices for hand pose (15 joints, each with 3x3 rotation matrix)
+            hand_pose = np.tile(np.eye(3), (1, 15, 1, 1)).repeat(T, axis=0) # (T, 15, 3, 3)
             beta = np.zeros(10, dtype=np.float32)
             mask = np.zeros(T, dtype=bool)
             
