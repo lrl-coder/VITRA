@@ -72,15 +72,31 @@ class DatasetBuilder:
 
     def process_directory(self, input_dir: str, output_dir: str):
         """
-        Process all videos in a directory.
+        Process all videos in a directory OR a single video file.
         """
         input_path = Path(input_dir)
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         
         # Find videos
-        videos = self.video_processor.find_videos(input_path, self.config.video.supported_formats)
-        self.logger.info(f"Found {len(videos)} videos in {input_dir}")
+        videos = []
+        if input_path.is_file():
+            # If input is a single file, just add it to the list
+            self.logger.info(f"Processing single video file: {input_path}")
+            # Check format manually since find_videos is skipped
+            if input_path.suffix in self.config.video.supported_formats:
+                videos = [input_path]
+            else:
+                 self.logger.warning(f"File {input_path} format {input_path.suffix} not in supported list: {self.config.video.supported_formats}")
+                 # Try to process anyway? Or stop? Let's proceed but warn.
+                 videos = [input_path]
+                 
+        elif input_path.is_dir():
+            videos = self.video_processor.find_videos(input_path, self.config.video.supported_formats)
+            self.logger.info(f"Found {len(videos)} videos in {input_dir}")
+        else:
+            self.logger.error(f"Input path {input_dir} is neither a file nor a directory")
+            return
         
         # Process loop (Sequential for now, could be parallelized)
         # Note: GPU models (HandRecon) usually restrict parallel processing on single GPU

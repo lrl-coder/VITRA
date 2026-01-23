@@ -30,7 +30,7 @@ def setup_logging(verbose=True):
 def main():
     parser = argparse.ArgumentParser(description="VITRA Dataset Construction Pipeline")
     parser.add_argument("--input_dir", type=str, default="data/examples/videos", 
-                        help="Directory containing input videos")
+                        help="Directory containing input videos OR path to a single video file")
     parser.add_argument("--output_dir", type=str, default="data/output_dataset", 
                         help="Directory to save processed dataset")
     parser.add_argument("--config", type=str, default=None, 
@@ -47,7 +47,7 @@ def main():
     
     input_path = Path(args.input_dir)
     if not input_path.exists():
-        logger.error(f"Input directory not found: {input_path}")
+        logger.error(f"Input path not found: {input_path}")
         return
         
     # Load configuration

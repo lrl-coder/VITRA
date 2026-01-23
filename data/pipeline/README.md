@@ -66,9 +66,19 @@ data/pipeline/
 
 ### 基础命令：
 
+支持处理**单个视频文件**或**包含多个视频的文件夹**。
+
+**处理整个文件夹：**
 ```bash
 python scripts/run_annotation_pipeline.py \
     --input_dir data/examples/videos \
+    --output_dir data/my_dataset
+```
+
+**处理单个视频：**
+```bash
+python scripts/run_annotation_pipeline.py \
+    --input_dir data/examples/videos/demo.mp4 \
     --output_dir data/my_dataset
 ```
 
