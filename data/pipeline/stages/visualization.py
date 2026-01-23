@@ -80,6 +80,7 @@ class VisualizationStage(TimedStage):
     def _do_process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Generate visualization video.
+        Saves both full video and individual episode segments.
         """
         if not self.config.save_visualization:
             return input_data
@@ -90,16 +91,15 @@ class VisualizationStage(TimedStage):
         recon = input_data.get('reconstruction', {})
         fps = input_data.get('fps', 30.0)
         
-        output_dir = Path(input_data.get('output_dir', '.')) / "vis"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{video_name}_vis.mp4"
+        # Create a dedicated folder for this video's visualizations
+        video_vis_dir = Path(input_data.get('output_dir', '.')) / "vis" / video_name
+        video_vis_dir.mkdir(parents=True, exist_ok=True)
         
-        self.logger.info(f"Rendering visualization to {output_path}...")
+        self.logger.info(f"Rendering visualizations for {video_name}...")
         
-        # Prepare video writer
+        # Prepare video dimensions
         h, w = frames[0].shape[:2]
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(str(output_path), fourcc, fps, (w, h))
 
         try:
             # Pre-compute episode lookups for fast access
@@ -109,9 +109,6 @@ class VisualizationStage(TimedStage):
                     if f_idx not in frame_epis:
                         frame_epis[f_idx] = []
                     frame_epis[f_idx].append(ep)
-            
-            # Simple loop to ensure frame_epis is ready or for simple HUD pass if needed
-            # (Currently logic is strictly sequential: 3D render -> Draw HUD -> Write)
 
             # Perform 3D Rendering Batch if enabled
             final_frames = frames 
@@ -125,10 +122,9 @@ class VisualizationStage(TimedStage):
                     self.logger.error(traceback.format_exc())
                     final_frames = frames
 
-            # Write frames to video
+            # Process all frames with HUD overlay
+            processed_frames = []
             for i, frame in enumerate(final_frames):
-                # If 3D rendering was done, frame is already processed. 
-                
                 vis_frame = frame.copy()
                 if self.enable_3d:
                     # If 3D enabled, frame is RGB from renderer, convert to BGR for OpenCV
@@ -141,16 +137,39 @@ class VisualizationStage(TimedStage):
                 # HUD
                 active_epis = frame_epis.get(i, [])
                 self._draw_hud(vis_frame, active_epis, episodes, i, len(frames))
-                out.write(vis_frame)
+                processed_frames.append(vis_frame)
+            
+            # 1. Save full video
+            full_video_path = video_vis_dir / "full.mp4"
+            self.logger.info(f"Saving full video to {full_video_path}...")
+            out_full = cv2.VideoWriter(str(full_video_path), fourcc, fps, (w, h))
+            for frame in processed_frames:
+                out_full.write(frame)
+            out_full.release()
+            self.logger.info(f"Full video saved: {full_video_path}")
+            
+            # 2. Save individual episode segments
+            self.logger.info(f"Saving {len(episodes)} episode segments...")
+            for ep_idx, ep in enumerate(episodes):
+                start_frame = ep['start_frame']
+                end_frame = ep['end_frame']
+                
+                # Create episode video
+                ep_video_path = video_vis_dir / f"ep_{ep_idx:06d}.mp4"
+                out_ep = cv2.VideoWriter(str(ep_video_path), fourcc, fps, (w, h))
+                
+                for frame_idx in range(start_frame, end_frame):
+                    if frame_idx < len(processed_frames):
+                        out_ep.write(processed_frames[frame_idx])
+                
+                out_ep.release()
+                self.logger.info(f"  Episode {ep_idx:06d} saved: {ep_video_path} (frames {start_frame}-{end_frame})")
                 
         except Exception as e:
             self.logger.error(f"Error during visualization processing: {e}")
             raise e
-        finally:
-            out.release()
-            self.logger.info(f"Video writer released.")
             
-        self.logger.info(f"Visualization saved to {output_path}")
+        self.logger.info(f"All visualizations saved to {video_vis_dir}")
         
         return input_data
 
