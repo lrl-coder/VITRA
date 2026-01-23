@@ -51,7 +51,7 @@ class SegmentationConfig:
     
     # Motion threshold
     # Minimum path length (in meters) to consider a segment valid
-    min_motion_threshold: float = 0.1
+    min_motion_threshold: float = 0.01
     
     # Processing
     fps: float = 30.0  # Default FPS if not provided in input

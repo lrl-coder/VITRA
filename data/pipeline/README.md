@@ -49,6 +49,7 @@ data/pipeline/
     -   `smoothing_sigma`: 轨迹高斯平滑的强度。
     -   `minima_window_size`: 检测分割点（速度极小值）的时间窗口大小（秒）。
     -   `min_segment_duration`: 动作片段的最小持续时间（秒）。
+    -   `min_motion_threshold`: 动作片段的最小移动距离（米），用于过滤静止手/无效片段（默认 0.01）。
 
 -   **`AnnotationConfig`** (标注配置 - 阶段 4):
     -   `llm_provider`: `openai`, `azure` 或 `local`。
