@@ -5,6 +5,7 @@ Segments continuous video into atomic action episodes based on motion heuristics
 
 from typing import Dict, Any, List, Tuple, Optional
 import numpy as np
+import torch
 from dataclasses import dataclass
 
 from .base import TimedStage
