@@ -189,22 +189,38 @@ class ActionSegmentationStage(TimedStage):
             if duration < min_len:
                 continue
             
+            # Check motion magnitude (Path Length)
+            # If the hand barely moved, it's likely an idle segment or poor reconstruction
+            seg_traj = smoothed_traj[start:end]
+            path_length = 0.0
+            if len(seg_traj) > 1:
+                path_length = np.sum(np.linalg.norm(np.diff(seg_traj, axis=0), axis=1))
+            
+            if duration <= max_len:
+                # Only filter regular segments here. Split segments need checking individually.
+                if path_length < self.config.min_motion_threshold:
+                    continue
+
             # If segment is too long, it might be holding/idle or a long motion without clear minima.
-            # For "Atomic" actions, extremely long segments usually imply we missed a split
-            # or it is a long idle period. 
             if duration > max_len:
                  # Force split long segments into equal parts
-                 # This prevents "runaway" segments that last until the end of the video
                  num_splits = int(np.ceil(duration / max_len))
-                 split_len = duration / num_splits # Use float division for even splits
+                 split_len = duration / num_splits 
                  
                  for k in range(num_splits):
                      s = start + int(k * split_len)
                      e = start + int((k + 1) * split_len)
-                     # Ensure we don't go out of bounds (though int conversion handles it mostly)
                      e = min(e, end)
+                     
                      if s < e:
-                         segments.append((s, e))
+                         # recursively check motion for sub-segments
+                         sub_traj = smoothed_traj[s:e]
+                         sub_path_len = 0.0
+                         if len(sub_traj) > 1:
+                             sub_path_len = np.sum(np.linalg.norm(np.diff(sub_traj, axis=0), axis=1))
+                         
+                         if sub_path_len >= self.config.min_motion_threshold:
+                             segments.append((s, e))
                  continue
                  
             segments.append((start, end))
