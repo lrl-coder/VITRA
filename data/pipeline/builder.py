@@ -115,8 +115,9 @@ class DatasetBuilder:
         final_data = self.annotator.process(segmented_data)
         
         # --- Stage 5: Visualization (Optional) ---
-        # Pass output_root to visualization stage
-        final_data['output_dir'] = output_root  
+        # Pass output_root and video_name to visualization stage
+        final_data['output_dir'] = output_root
+        final_data['video_name'] = video_name
         self.visualizer.process(final_data)
         
         # --- Stage 6: Save Output ---

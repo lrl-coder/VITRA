@@ -427,7 +427,7 @@ class VisualizationStage(TimedStage):
         
         rendered_frames = self.visualizer._render_hand_trajectory(
             vis_frames,
-            hand_traj_wordspace,
+            hand_traj_worldspace,
             hand_mask,
             extrinsics,
             renderer,
