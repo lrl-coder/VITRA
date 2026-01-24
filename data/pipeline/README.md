@@ -7,11 +7,20 @@
 该流程通过一系列连续的处理阶段，将原始视频转换为丰富的语义和几何数据：
 
 1.  **视频处理 (Video Processing)**：帧提取、尺寸调整和去畸变。
-2.  **手部重建 (Hand Reconstruction)**：3D手部和相机位姿估计 (使用 HaMeR/MANO 等技术)。
-3.  **动作分割 (Action Segmentation)**：基于运动启发式算法（速度极小值法），将连续视频分割为若干个原子动作片段。
-4.  **语言标注 (Language Annotation)**：利用大型语言模型 (LLM) 为每个动作片段生成自然语言描述。
-5.  **可视化 (Visualization)**：在视频上渲染3D覆盖层和文本标注，用于人工验证。
-6.  **格式化 (Formatting)**：将元数据保存为 VITRA 标准的 `.npy` 格式。
+2.  **手部重建 (Hand Reconstruction)**：相机空间下的3D手部位姿估计 (使用 HaWoR/MANO)。
+3.  **相机位姿估计 (Camera Pose Estimation)**：使用 SLAM 技术跟踪相机运动轨迹。
+4.  **世界坐标系转换 (World-Space Transformation)**：将相机空间的手部数据转换到世界坐标系。
+5.  **动作分割 (Action Segmentation)**：基于运动启发式算法（速度极小值法），将连续视频分割为若干个原子动作片段。
+6.  **语言标注 (Language Annotation)**：利用大型语言模型 (LLM) 为每个动作片段生成自然语言描述。
+7.  **可视化 (Visualization)**：在视频上渲染3D覆盖层和文本标注，用于人工验证。
+8.  **格式化 (Formatting)**：将元数据保存为 VITRA 标准的 `.npy` 格式。
+
+### 为什么需要世界坐标系 (World-Space)?
+
+第一人称视频中相机会移动，获取世界坐标系的手部数据至关重要：
+- 可以将动作重新投影到任意帧的相机视角
+- 模拟机器人操作时的"静止相机"视角
+- 将晃动的人类视频变成稳定的机器人训练数据
 
 ## 2. 目录结构 (Directory Structure)
 
@@ -22,10 +31,11 @@ data/pipeline/
 ├── stages/               # 各个独立的处理阶段
 │   ├── base.py                 # 阶段的抽象基类
 │   ├── video_processor.py      # 阶段 1: 视频 I/O
-│   ├── hand_reconstruction.py  # 阶段 2: 3D 重建
-│   ├── action_segmentation.py  # 阶段 3: 时序分割
-│   ├── language_annotation.py  # 阶段 4: 文本生成
-│   └── visualization.py        # 阶段 5: 渲染与输出
+│   ├── hand_reconstruction.py  # 阶段 2: 3D 重建 (Camera-Space)
+│   ├── camera_pose.py          # 阶段 3: 相机位姿估计 (SLAM)
+│   ├── action_segmentation.py  # 阶段 5: 时序分割
+│   ├── language_annotation.py  # 阶段 6: 文本生成
+│   └── visualization.py        # 阶段 7: 渲染与输出
 └── ...
 ```
 
