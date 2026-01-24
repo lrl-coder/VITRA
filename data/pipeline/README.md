@@ -127,14 +127,76 @@ output_dir/
 ```
 
 ### `.npy` 格式说明
-每个 `.npy` 文件对应一个原子动作片段，包含一个字典：
--   `video_name`: 源视频名称。
--   `video_decode_frame`: 该片段对应的帧索引列表。
--   `text`: `{'left': [(描述, 范围)], 'right': [...]}` 文本标注。
--   `left`/`right`: 包含该手部 3D 位姿数据 (`hand_pose`, `transl`, `beta`) 的字典。
--   `extrinsics`/`intrinsics`: 相机参数。
 
-## 7. 扩展流程 (Extending the Pipeline)
+每个 `.npy` 文件对应一个原子动作片段，包含一个字典。完整的字段规范请参考 [`data/data.md`](../data.md) 第 4 节。
+
+#### 顶层字段 (Top-level Fields)
+
+| 字段名 | 类型 | 形状 | 说明 |
+|--------|------|------|------|
+| `video_clip_id_segment` | `np.ndarray` | `(T,)` int64 | 视频片段 ID (已弃用，保留兼容性) |
+| `extrinsics` | `np.ndarray` | `(T, 4, 4)` float64 | World2Cam 外参矩阵 |
+| `intrinsics` | `np.ndarray` | `(3, 3)` float64 | 相机内参矩阵 |
+| `video_decode_frame` | `np.ndarray` | `(T,)` int64 | 原始视频中的帧索引 |
+| `video_name` | `str` | - | 源视频名称 |
+| `avg_speed` | `float` | 标量 | 每帧平均手腕移动距离（米） |
+| `total_rotvec_degree` | `float` | 标量 | 片段内相机总旋转角度（度） |
+| `total_transl_dist` | `float` | 标量 | 片段内相机总平移距离（米） |
+| `anno_type` | `str` | - | 标注类型 (`'left'` 或 `'right'`) |
+| `text` | `dict` | - | 文本标注 `{'left': [(描述, 范围)], 'right': [...]}` |
+| `text_rephrase` | `dict` | - | GPT-4 改写的文本标注 |
+| `left` | `dict` | - | 左手 3D 位姿数据 |
+| `right` | `dict` | - | 右手 3D 位姿数据 |
+
+#### 手部数据字段 (`left`/`right` 子字典)
+
+| 字段名 | 类型 | 形状 | 说明 |
+|--------|------|------|------|
+| `beta` | `np.ndarray` | `(10,)` float64 | MANO 手型参数 |
+| `global_orient_camspace` | `np.ndarray` | `(T, 3, 3)` float64 | 相机空间中的手腕旋转矩阵 |
+| `global_orient_worldspace` | `np.ndarray` | `(T, 3, 3)` float64 | 世界空间中的手腕旋转矩阵 |
+| `hand_pose` | `np.ndarray` | `(T, 15, 3, 3)` float64 | 15 个关节的局部旋转矩阵 |
+| `transl_camspace` | `np.ndarray` | `(T, 3)` float64 | 相机空间中的手腕平移 (已弃用) |
+| `transl_worldspace` | `np.ndarray` | `(T, 3)` float64 | 世界空间中的手腕平移 |
+| `kept_frames` | `np.ndarray` | `(T,)` int64 | 有效帧掩码 (0/1) |
+| `joints_camspace` | `np.ndarray` | `(T, 21, 3)` float32 | 相机空间中的 21 个关节 3D 位置 |
+| `joints_worldspace` | `np.ndarray` | `(T, 21, 3)` float64 | 世界空间中的 21 个关节 3D 位置 |
+| `wrist` | `np.ndarray` | `(T, 1, 3)` float32 | 手腕位置 (已弃用) |
+| `max_translation_movement` | `float` 或 `None` | 标量 | 最大帧间手腕位移 |
+| `max_wrist_rotation_movement` | `float` 或 `None` | 标量 | 最大帧间手腕旋转角度 |
+| `max_finger_joint_angle_movement` | `float` 或 `None` | 标量 | 最大帧间手指关节角度变化 |
+
+## 7. 数据格式验证 (Format Validation)
+
+我们提供了一个验证工具来检查生成的 `.npy` 文件是否符合 VITRA 标准格式。
+
+### 验证单个文件：
+```bash
+python my_demo/utils/validate_npy_format.py --input path/to/file.npy
+```
+
+### 验证整个目录：
+```bash
+python my_demo/utils/validate_npy_format.py --input data/processed_dataset/episodic_annotations
+```
+
+### 查看文件结构：
+```bash
+python my_demo/utils/validate_npy_format.py --input path/to/file.npy --structure
+```
+
+### 详细输出模式：
+```bash
+python my_demo/utils/validate_npy_format.py --input path/to/file.npy --verbose
+```
+
+验证工具会检查：
+- 所有必需字段是否存在
+- 数据类型是否正确 (dtype)
+- 数组形状是否符合规范
+- 并生成详细的验证报告
+
+## 8. 扩展流程 (Extending the Pipeline)
 
 如需添加新功能：
 1.  创建一个继承自 `stages.base.TimedStage` 的新类。
