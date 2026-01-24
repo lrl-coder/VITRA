@@ -155,10 +155,6 @@ def detect_track(imgfiles: list, hand_det_model: YOLO, thresh: float = 0.5) -> t
                     subj['det_box'] = boxes[[idx]]
                     subj['det_handedness'] = handedness[[idx]]
                     
-                    # Debug: Print handedness value
-                    hand_label = "RIGHT" if handedness[[idx]] > 0 else "LEFT"
-                    print(f"[DEBUG] Frame {t}, Box {idx}: handedness={handedness[[idx]][0]}, interpreted as {hand_label}")
-                    
                     if (not find_right and handedness[[idx]] > 0) or (not find_left and handedness[[idx]]==0):
                         if id in tracks:
                             tracks[id].append(subj)
@@ -207,17 +203,10 @@ def hawor_motion_estimation(
         valid = np.array([t['det'] for t in trk])        
         is_right = np.concatenate([t['det_handedness'] for t in trk])[valid]
         
-        # 计算右手的比例
-        right_ratio = is_right.sum() / len(is_right) if len(is_right) > 0 else 0
-        
-        # 使用更严格的阈值：只有当超过70%的帧是左手时，才判定为左手
-        # 这样可以减少检测器误判的影响
-        if right_ratio < 0.3:  # 少于30%是右手 → 判定为左手
+        if is_right.sum() / len(is_right) < 0.5:
             left_trk.extend(trk)
-            print(f"[DEBUG] Track {idx}: {right_ratio*100:.1f}% frames are RIGHT → classified as LEFT")
-        else:  # 30%以上是右手 → 判定为右手
+        else:
             right_trk.extend(trk)
-            print(f"[DEBUG] Track {idx}: {right_ratio*100:.1f}% frames are RIGHT → classified as RIGHT")
     left_trk = sorted(left_trk, key=lambda x: x['frame'])
     right_trk = sorted(right_trk, key=lambda x: x['frame'])
     final_tracks = {
@@ -302,12 +291,8 @@ def hawor_motion_estimation(
                 
                 if idx == 0:
                     left_results[frame_id] = result
-                    if frame_id == s_frame:  # 只在第一帧打印
-                        print(f"[DEBUG] Storing frames {s_frame}-{e_frame} to LEFT results (idx={idx})")
                 else:
                     right_results[frame_id] = result
-                    if frame_id == s_frame:  # 只在第一帧打印
-                        print(f"[DEBUG] Storing frames {s_frame}-{e_frame} to RIGHT results (idx={idx})")
     
     reformat_results = {'left': left_results, 'right': right_results}
 
