@@ -155,6 +155,10 @@ def detect_track(imgfiles: list, hand_det_model: YOLO, thresh: float = 0.5) -> t
                     subj['det_box'] = boxes[[idx]]
                     subj['det_handedness'] = handedness[[idx]]
                     
+                    # Debug: Print handedness value
+                    hand_label = "RIGHT" if handedness[[idx]] > 0 else "LEFT"
+                    print(f"[DEBUG] Frame {t}, Box {idx}: handedness={handedness[[idx]][0]}, interpreted as {hand_label}")
+                    
                     if (not find_right and handedness[[idx]] > 0) or (not find_left and handedness[[idx]]==0):
                         if id in tracks:
                             tracks[id].append(subj)
