@@ -99,7 +99,40 @@ class VisualizationStage(TimedStage):
         
         # Prepare video dimensions
         h, w = frames[0].shape[:2]
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        
+        # Use H.264 codec for better compatibility
+        # Try different codecs in order of preference
+        codec_options = [
+            ('avc1', '.mp4'),  # H.264 on macOS/Windows
+            ('H264', '.mp4'),  # H.264 alternative
+            ('X264', '.mp4'),  # x264 encoder
+            ('mp4v', '.mp4'),  # MPEG-4 Part 2 (fallback)
+        ]
+        
+        fourcc = None
+        for codec, ext in codec_options:
+            try:
+                test_fourcc = cv2.VideoWriter_fourcc(*codec)
+                # Test if the codec works
+                test_path = str(video_vis_dir / f"_test{ext}")
+                test_writer = cv2.VideoWriter(test_path, test_fourcc, fps, (w, h))
+                if test_writer.isOpened():
+                    test_writer.release()
+                    # Clean up test file
+                    try:
+                        Path(test_path).unlink()
+                    except:
+                        pass
+                    fourcc = test_fourcc
+                    self.logger.info(f"Using video codec: {codec}")
+                    break
+                test_writer.release()
+            except Exception:
+                continue
+        
+        if fourcc is None:
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            self.logger.warning("Using fallback codec: mp4v")
 
         try:
             # Pre-compute episode lookups for fast access
@@ -146,6 +179,9 @@ class VisualizationStage(TimedStage):
             for frame in processed_frames:
                 out_full.write(frame)
             out_full.release()
+            
+            # Post-process with ffmpeg for better compatibility
+            self._fix_video_with_ffmpeg(full_video_path, fps)
             self.logger.info(f"Full video saved: {full_video_path}")
             
             # 2. Save individual episode segments
@@ -163,6 +199,9 @@ class VisualizationStage(TimedStage):
                         out_ep.write(processed_frames[frame_idx])
                 
                 out_ep.release()
+                
+                # Post-process with ffmpeg
+                self._fix_video_with_ffmpeg(ep_video_path, fps)
                 self.logger.info(f"  Episode {ep_idx:06d} saved: {ep_video_path} (frames {start_frame}-{end_frame})")
                 
         except Exception as e:
@@ -172,6 +211,68 @@ class VisualizationStage(TimedStage):
         self.logger.info(f"All visualizations saved to {video_vis_dir}")
         
         return input_data
+
+    def _fix_video_with_ffmpeg(self, video_path: Path, fps: float):
+        """
+        Re-encode video with ffmpeg for better compatibility.
+        
+        This fixes:
+        1. VSCode playback issues (uses H.264 codec)
+        2. Video looping issues (sets proper duration metadata)
+        3. Web browser compatibility
+        """
+        import subprocess
+        import shutil
+        
+        # Check if ffmpeg is available
+        if not shutil.which('ffmpeg'):
+            self.logger.warning("ffmpeg not found. Video may have compatibility issues.")
+            return
+        
+        try:
+            temp_path = video_path.with_suffix('.temp.mp4')
+            
+            # Rename original to temp
+            video_path.rename(temp_path)
+            
+            # Re-encode with H.264 and proper metadata
+            cmd = [
+                'ffmpeg',
+                '-y',  # Overwrite output
+                '-i', str(temp_path),
+                '-c:v', 'libx264',  # H.264 codec
+                '-preset', 'fast',  # Encoding speed
+                '-crf', '23',  # Quality (lower = better, 18-28 is good)
+                '-pix_fmt', 'yuv420p',  # Pixel format for compatibility
+                '-movflags', '+faststart',  # Web streaming optimization
+                '-r', str(fps),  # Set frame rate
+                '-an',  # No audio (we don't have audio)
+                str(video_path)
+            ]
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+            
+            if result.returncode == 0:
+                # Success, remove temp file
+                temp_path.unlink()
+            else:
+                # Failed, restore original
+                self.logger.warning(f"ffmpeg encoding failed: {result.stderr[:200]}")
+                temp_path.rename(video_path)
+                
+        except subprocess.TimeoutExpired:
+            self.logger.warning("ffmpeg encoding timed out")
+            if temp_path.exists():
+                temp_path.rename(video_path)
+        except Exception as e:
+            self.logger.warning(f"ffmpeg post-processing failed: {e}")
+            if temp_path.exists():
+                temp_path.rename(video_path)
 
     def _draw_hud(self, img: np.ndarray, active_episodes: List[Dict], all_episodes: List[Dict], frame_idx: int, total_frames: int):
         """Draw Heads-Up Display with text and timeline."""
