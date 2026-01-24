@@ -36,6 +36,7 @@ image = resize_short_side_to_target(image, target=224)
 fov = torch.tensor([[np.deg2rad(60.0), np.deg2rad(60.0)]], dtype=torch.float32).cuda()
 
 image = np.array(image)
+print(f"[DEBUG] Image shape: {image.shape}")
 
 # Input your prompt here. Only predict the right hand action as an example.
 instruction = "Left hand: None. Right hand: Pick up the phone on the table."  
@@ -53,10 +54,13 @@ instruction = "Left hand: None. Right hand: Pick up the phone on the table."
 #       * [6:51]   hand_pose:       45 joint angles as Euler angles (15 joints × 3 axes, in radians)
 #   - beta_right [10]:      Right hand MANO shape parameters
 state = np.zeros((normalizer.state_mean.shape[0],))             # Input your hand state here
+print(f"[DEBUG] Initial State shape: {state.shape}")
+
 # Only use right hand state as an example.
 # state_mask[0] indicates whether to use left hand state, 
 # state_mask[1] indicates whether to use right hand state.
 state_mask = np.array([False, True], dtype=bool)                # Input your hand state mask here. 
+print(f"[DEBUG] State Mask shape: {state_mask.shape}")
 
 
 # Input your action_mask here. Shape: (W, 2) where W is chunk_size. 
@@ -64,10 +68,13 @@ state_mask = np.array([False, True], dtype=bool)                # Input your han
 # action_mask[:, 1] indicates whether to predict right hand actions. 
 # All left hand False, all right hand True as an example.
 action_mask = np.tile(np.array([[False, True]], dtype=bool), (model.chunk_size, 1))  
+print(f"[DEBUG] Action Mask shape: {action_mask.shape}")
 
 
 # Normalize state
 norm_state = normalizer.normalize_state(state)
+print(f"[DEBUG] Normalized State shape: {norm_state.shape}")
+
 
 unified_action_dim = ActionFeature.ALL_FEATURES[1]   # 192
 unified_state_dim = StateFeature.ALL_FEATURES[1]     # 212
@@ -86,6 +93,11 @@ _, unified_action_mask = pad_action(
     unified_action_dim=unified_action_dim
 )
 
+print(f"[DEBUG] Unified State shape: {unified_state.shape}")
+print(f"[DEBUG] Unified State Mask shape: {unified_state_mask.shape}")
+print(f"[DEBUG] Unified Action Mask shape: {unified_action_mask.shape}")
+
+
 # Model inference
 norm_action = model.predict_action(
     image = image,
@@ -98,8 +110,11 @@ norm_action = model.predict_action(
     fov = fov,
     sample_times = 1
 )
+print(f"[DEBUG] Raw Model Output (Norm Action) shape: {norm_action.shape}")
+
 norm_action = norm_action[0, :,:102]
 # Denormalize predicted action
 unnorm_action = normalizer.unnormalize_action(norm_action)
+print(f"[DEBUG] Final Unnormalized Action shape: {unnorm_action.shape}")
 print("Action Shape:", unnorm_action.shape)
 print("Predicted Action:", unnorm_action)
