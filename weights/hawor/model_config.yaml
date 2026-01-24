@@ -113,7 +113,7 @@ MODEL:
   BACKBONE:
     TYPE: vit
     TORCH_COMPILE: 0
-    PRETRAINED_WEIGHTS: 
+    PRETRAINED_WEIGHTS: ./weights/hawor/checkpoints/hawor.ckpt
   MANO_HEAD:
     TYPE: transformer_decoder
     IN_CHANNELS: 2048
