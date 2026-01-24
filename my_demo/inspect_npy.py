@@ -3,6 +3,29 @@ import os
 
 file_path = r'd:\project\PYProject\VITRA\data\examples\annotations\Ego4D_03cc49c3-a7d1-445b-9a2a-545c4fae6843_ep_example.npy'
 
+def print_structure(data, indent=0):
+    indent_str = "  " * indent
+    if isinstance(data, dict):
+        for key, value in data.items():
+            info = ""
+            is_dict = isinstance(value, dict)
+            
+            if hasattr(value, 'shape'):
+                info = f"Shape: {value.shape}, Dtype: {value.dtype}"
+            elif isinstance(value, list):
+                info = f"List of length {len(value)}"
+                if len(value) > 0:
+                    info += f", First item type: {type(value[0])}"
+            elif not is_dict:
+                info = f"Type: {type(value)}"
+            
+            print(f"{indent_str}- {key}: {info}")
+            
+            if is_dict:
+                print_structure(value, indent + 1)
+            elif isinstance(value, (str, int, float, bool, np.integer, np.floating)):
+                 print(f"{indent_str}  Value: {value}")
+
 def inspect_npy(path):
     print(f"Loading {path}...")
     try:
@@ -22,22 +45,8 @@ def inspect_npy(path):
         print(f"Content Type: {type(content)}")
         
         if isinstance(content, dict):
-            print("\nDictionary Keys:")
-            for key, value in content.items():
-                info = ""
-                if hasattr(value, 'shape'):
-                    info = f"Shape: {value.shape}, Dtype: {value.dtype}"
-                elif isinstance(value, list):
-                    info = f"List of length {len(value)}"
-                    if len(value) > 0:
-                        info += f", First item type: {type(value[0])}"
-                else:
-                    info = f"Type: {type(value)}"
-                print(f"  - {key}: {info}")
-                
-                # Print a small sample for simple types
-                if isinstance(value, (str, int, float, bool)):
-                     print(f"    Value: {value}")
+            print("\nDictionary Structure:")
+            print_structure(content)
         else:
             print(f"Content: {content}")
             
