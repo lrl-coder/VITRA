@@ -201,12 +201,14 @@ class VITRA_Paligemma(nn.Module):
         num_ddim_steps: int = 10,
         **kwargs,
     ):
+        print(f"DEBUG: [_forward_act_model] input vlm_features: {vlm_features.shape}")
         
         actions = None
         action_loss = None
 
         B = vlm_features.shape[0]
         action_features = self.extract_cognition_token(vlm_features, attention_mask) #[B, D]
+        print(f"DEBUG: [_forward_act_model] extracted action_features: {action_features.shape}")
         model_dtype = next(self.act_model.net.parameters()).dtype
         action_features = action_features.to(model_dtype)
         
@@ -249,10 +251,12 @@ class VITRA_Paligemma(nn.Module):
             return actions, action_loss
 
     def extract_cognition_token(self, output_hs, attention_mask):
+        print(f"DEBUG: [extract_cognition_token] output_hs: {output_hs.shape}, attention_mask: {attention_mask.shape}")
         cumulative_sum = attention_mask.cumsum(dim=1)
         last_true_indices = (cumulative_sum == cumulative_sum.max(dim=1, keepdim=True)[0]).float().argmax(dim=1)
         expanded_indices = last_true_indices.unsqueeze(-1).expand(-1, output_hs.size(-1))
         action_features = output_hs.gather(1, expanded_indices.unsqueeze(1))  # [B, 1, D]
+        print(f"DEBUG: [extract_cognition_token] action_features: {action_features.shape}")
         return action_features
 
     def prepare_vlm_input_embeddings(
@@ -265,6 +269,12 @@ class VITRA_Paligemma(nn.Module):
         fov: Optional[torch.FloatTensor] = None,
         **kwargs
     ):
+        print(f"DEBUG: [prepare_vlm_input_embeddings] inputs - pixel_values: {pixel_values.shape if pixel_values is not None else 'None'}, input_ids: {input_ids.shape}")
+        if current_state is not None:
+             print(f"DEBUG: [prepare_vlm_input_embeddings] current_state: {current_state.shape}, mask: {current_state_mask.shape}")
+        if fov is not None:
+             print(f"DEBUG: [prepare_vlm_input_embeddings] fov: {fov.shape}")
+
         B = input_ids.shape[0]
         word_embeds = self.model.get_input_embeddings()(input_ids)
         input_ids_mask = attention_mask 
@@ -307,6 +317,7 @@ class VITRA_Paligemma(nn.Module):
         # Concatenate all
         inputs_embeds = torch.cat(embeds_list, dim=1)
         inputs_masks = torch.cat(masks_list, dim=1)
+        print(f"DEBUG: [prepare_vlm_input_embeddings] Concatenated inputs_embeds: {inputs_embeds.shape}")
 
         # Note: Here we only use `self.cognition_token_id` as a placeholder for the token corresponding to the FOV or states (if any) input. 
         # In practice, the embedding passed to the LLM will be replaced with the actual FOV or states (if any) embedding.
@@ -337,6 +348,7 @@ class VITRA_Paligemma(nn.Module):
                 )
             image_features = image_features.to(inputs_embeds.device, inputs_embeds.dtype)
             inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, image_features)
+            print(f"DEBUG: [prepare_vlm_input_embeddings] Final inputs_embeds (after image patch): {inputs_embeds.shape}")
 
         causal_mask = self.model._update_causal_mask(
             attention_mask, None, None, cache_position, input_ids, inputs_embeds, False
@@ -457,6 +469,10 @@ class VITRA_Paligemma(nn.Module):
         fov: [B, 2]
         return: predicted normalized robot action, [sample_times, T, D]
         """
+        print(f"DEBUG: [predict_action] instruction: {instruction}")
+        print(f"DEBUG: [predict_action] current_state: {current_state.shape}, mask: {current_state_mask.shape}")
+        if fov is not None:
+             print(f"DEBUG: [predict_action] fov: {fov.shape}")
 
         B = current_state.shape[0]
         assert B == 1, f"Batch size {B} not supported in predict_action for now."
