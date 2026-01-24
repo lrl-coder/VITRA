@@ -289,10 +289,12 @@ def hawor_motion_estimation(
                 result['global_orient'] = data_out['init_root_orient'][0, frame_id-s_frame].cpu().numpy()
                 result['transl'] = data_out['init_trans'][0, frame_id-s_frame].cpu().numpy()
                 
-                if idx == 0:
-                    left_results[frame_id] = result
-                else:
+                # 使用实际的 is_right 值来判断左右手，而不是依赖轨迹索引
+                # is_right[0] > 0 表示右手，否则是左手
+                if is_right[0] > 0:
                     right_results[frame_id] = result
+                else:
+                    left_results[frame_id] = result
     
     reformat_results = {'left': left_results, 'right': right_results}
 
