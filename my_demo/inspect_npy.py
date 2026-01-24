@@ -1,7 +1,7 @@
 import numpy as np
 import os
 
-file_path = r'd:\project\PYProject\VITRA\data\examples\annotations\Ego4D_03cc49c3-a7d1-445b-9a2a-545c4fae6843_ep_example.npy'
+file_path = r'd:/project/PYProject/VITRA/data/processed_dataset/episodic_annotations/custom_03cc49c3-a7d1-445b-9a2a-545c4fae6843_ep_000000.npy'
 
 def print_structure(data, indent=0):
     indent_str = "  " * indent

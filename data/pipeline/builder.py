@@ -189,43 +189,223 @@ class DatasetBuilder:
     def _format_vitra_episode(self, ep_info, recon_full, intrinsics, start_idx, end_idx):
         """
         Helper to format a single episode slice into the VITRA dictionary format.
+        
+        The expected format is documented in data/data.md section 4.
+        
+        Args:
+            ep_info: Episode information dict containing text, anno_type, etc.
+            recon_full: Reconstruction results with 'left', 'right', 'fov_x' keys.
+                        Each hand contains {frame_id: {beta, hand_pose, global_orient, transl}}
+            intrinsics: Camera intrinsic matrix (3x3)
+            start_idx: Start frame index
+            end_idx: End frame index (exclusive)
+            
+        Returns:
+            Dictionary in VITRA metadata format.
         """
-        # This function would need detailed mapping logic reading from 'recon_full'
-        # which currently contains 'left' and 'right' dicts of frames.
-        
-        # Create Dummy/Placeholder Output that matches structure for now
-        # to ensure Pipeline runs
-        
         T = end_idx - start_idx
+        frame_indices = list(range(start_idx, end_idx))
         
-        def get_slice(hand_side):
-            # Extract arrays from recon_full[hand_side] for range [start, end]
-            # recon_full[hand_side] is assumed to be {frame_id: dict_of_params}
-            # Need to stack them
-            pass
+        # Build extrinsics array - using identity as placeholder
+        # In reality, this should come from camera pose estimation
+        extrinsics = np.tile(np.eye(4), (T, 1, 1)).astype(np.float64)
         
-        # Mock Extrinsics (Identity if not available)
-        extrinsics = np.eye(4)[None].repeat(T, axis=0) 
+        # Build intrinsics - use provided or default
+        if intrinsics is not None:
+            intrinsics_arr = np.array(intrinsics).astype(np.float64)
+        else:
+            intrinsics_arr = np.eye(3).astype(np.float64)
         
-        return {
-            'video_name': ep_info.get("video_name", "unknown"),
-            'anno_type': ep_info["anno_type"],
-            'text': ep_info["text"],
-            'text_rephrase': ep_info["text_rephrase"],
-            'video_decode_frame': list(range(start_idx, end_idx)),
-            'extrinsics': extrinsics,
-            'intrinsics': intrinsics if intrinsics is not None else np.eye(3),
-            # Add other keys as per data/data.md
-            'left': {
-                'beta': np.zeros(10), # Mock
-                'kept_frames': np.ones(T, dtype=int), # Mock
-                # ... other required fields ...
-            },
-            'right': {
-                'beta': np.zeros(10),
-                 'kept_frames': np.ones(T, dtype=int),
+        def extract_hand_data(hand_side):
+            """
+            Extract and format hand data from reconstruction results.
+            
+            Returns dict with all required fields for one hand.
+            """
+            hand_recon = recon_full.get(hand_side, {})
+            
+            # Initialize arrays
+            beta = np.zeros(10, dtype=np.float64)
+            global_orient_camspace = np.zeros((T, 3, 3), dtype=np.float64)
+            global_orient_worldspace = np.zeros((T, 3, 3), dtype=np.float64)
+            hand_pose = np.zeros((T, 15, 3, 3), dtype=np.float64)
+            transl_camspace = np.zeros((T, 3), dtype=np.float64)
+            transl_worldspace = np.zeros((T, 3), dtype=np.float64)
+            joints_camspace = np.zeros((T, 21, 3), dtype=np.float32)
+            joints_worldspace = np.zeros((T, 21, 3), dtype=np.float64)
+            wrist = np.zeros((T, 1, 3), dtype=np.float32)
+            kept_frames = np.zeros(T, dtype=np.int64)
+            
+            # Default identity rotation for unused frames
+            identity_rot = np.eye(3)
+            for t in range(T):
+                for j in range(15):
+                    hand_pose[t, j] = identity_rot.copy()
+                global_orient_camspace[t] = identity_rot.copy()
+                global_orient_worldspace[t] = identity_rot.copy()
+            
+            # Fill in data from reconstruction results
+            beta_set = False
+            for t_idx, frame_id in enumerate(frame_indices):
+                if frame_id in hand_recon:
+                    kept_frames[t_idx] = 1
+                    frame_data = hand_recon[frame_id]
+                    
+                    # Beta shape parameters (use first valid frame)
+                    if not beta_set and 'beta' in frame_data:
+                        beta = np.array(frame_data['beta']).astype(np.float64)
+                        beta_set = True
+                    
+                    # Global orientation (wrist rotation)
+                    if 'global_orient' in frame_data:
+                        global_orient = np.array(frame_data['global_orient'])
+                        # Ensure (3, 3) shape
+                        if global_orient.shape == (3, 3):
+                            global_orient_camspace[t_idx] = global_orient.astype(np.float64)
+                            # World space = extrinsics inverse @ cam space
+                            # For identity extrinsics, worldspace = camspace
+                            global_orient_worldspace[t_idx] = global_orient.astype(np.float64)
+                    
+                    # Hand pose (15 joint rotations)
+                    if 'hand_pose' in frame_data:
+                        hp = np.array(frame_data['hand_pose'])
+                        # Expected shape: (15, 3, 3)
+                        if hp.shape == (15, 3, 3):
+                            hand_pose[t_idx] = hp.astype(np.float64)
+                    
+                    # Translation
+                    if 'transl' in frame_data:
+                        transl = np.array(frame_data['transl']).flatten()[:3]
+                        transl_camspace[t_idx] = transl.astype(np.float64)
+                        transl_worldspace[t_idx] = transl.astype(np.float64)
+                        wrist[t_idx, 0] = transl.astype(np.float32)
+            
+            # Compute hand joints using MANO forward kinematics (simplified placeholder)
+            # In a full implementation, this would use the MANO model
+            for t_idx in range(T):
+                if kept_frames[t_idx]:
+                    # Use wrist as joint 0, others are relative offsets (placeholder)
+                    joints_camspace[t_idx, 0] = wrist[t_idx, 0]
+                    joints_worldspace[t_idx, 0] = wrist[t_idx, 0].astype(np.float64)
+            
+            # Compute movement statistics
+            valid_indices = np.where(kept_frames == 1)[0]
+            
+            # Max translation movement
+            max_translation_movement = None
+            if len(valid_indices) > 1:
+                translations = transl_worldspace[valid_indices]
+                diffs = np.diff(translations, axis=0)
+                movement_per_frame = np.linalg.norm(diffs, axis=1)
+                max_translation_movement = float(np.max(movement_per_frame)) if len(movement_per_frame) > 0 else 0.0
+            
+            # Max wrist rotation movement
+            max_wrist_rotation_movement = None
+            if len(valid_indices) > 1:
+                rotations = global_orient_worldspace[valid_indices]
+                angle_diffs = []
+                for i in range(len(rotations) - 1):
+                    R_diff = rotations[i].T @ rotations[i+1]
+                    # Compute rotation angle from rotation matrix
+                    trace = np.trace(R_diff)
+                    angle = np.arccos(np.clip((trace - 1) / 2, -1, 1))
+                    angle_diffs.append(angle)
+                max_wrist_rotation_movement = float(np.max(angle_diffs)) if angle_diffs else 0.0
+            
+            # Max finger joint angle movement
+            max_finger_joint_angle_movement = None
+            if len(valid_indices) > 1:
+                poses = hand_pose[valid_indices]
+                max_angle = 0.0
+                for i in range(len(poses) - 1):
+                    for j in range(15):
+                        R_diff = poses[i, j].T @ poses[i+1, j]
+                        trace = np.trace(R_diff)
+                        angle = np.arccos(np.clip((trace - 1) / 2, -1, 1))
+                        max_angle = max(max_angle, angle)
+                max_finger_joint_angle_movement = float(max_angle)
+            
+            return {
+                'beta': beta,
+                'global_orient_camspace': global_orient_camspace,
+                'global_orient_worldspace': global_orient_worldspace,
+                'hand_pose': hand_pose,
+                'transl_camspace': transl_camspace,
+                'transl_worldspace': transl_worldspace,
+                'kept_frames': kept_frames,
+                'joints_camspace': joints_camspace,
+                'joints_worldspace': joints_worldspace,
+                'wrist': wrist,
+                'max_translation_movement': max_translation_movement,
+                'max_wrist_rotation_movement': max_wrist_rotation_movement,
+                'max_finger_joint_angle_movement': max_finger_joint_angle_movement,
             }
+        
+        # Extract data for both hands
+        left_data = extract_hand_data('left')
+        right_data = extract_hand_data('right')
+        
+        # Compute global statistics
+        anno_type = ep_info.get("anno_type", "right")
+        primary_hand_data = left_data if anno_type == "left" else right_data
+        
+        # Avg speed (average wrist movement per frame)
+        valid_indices = np.where(primary_hand_data['kept_frames'] == 1)[0]
+        avg_speed = 0.0
+        if len(valid_indices) > 1:
+            translations = primary_hand_data['transl_worldspace'][valid_indices]
+            diffs = np.diff(translations, axis=0)
+            total_dist = np.sum(np.linalg.norm(diffs, axis=1))
+            avg_speed = total_dist / (len(valid_indices) - 1)
+        
+        # Total rotation (camera rotation over episode) - placeholder using hand rotation
+        total_rotvec_degree = 0.0
+        if len(valid_indices) > 1:
+            rotations = primary_hand_data['global_orient_worldspace'][valid_indices]
+            total_angle = 0.0
+            for i in range(len(rotations) - 1):
+                R_diff = rotations[i].T @ rotations[i+1]
+                trace = np.trace(R_diff)
+                angle = np.arccos(np.clip((trace - 1) / 2, -1, 1))
+                total_angle += angle
+            total_rotvec_degree = np.degrees(total_angle)
+        
+        # Total translation distance
+        total_transl_dist = 0.0
+        if len(valid_indices) > 1:
+            translations = primary_hand_data['transl_worldspace'][valid_indices]
+            diffs = np.diff(translations, axis=0)
+            total_transl_dist = np.sum(np.linalg.norm(diffs, axis=1))
+        
+        # Build the final dictionary
+        episode_dict = {
+            # Clip segment info (deprecated but required for compatibility)
+            'video_clip_id_segment': np.zeros(T, dtype=np.int64),
+            
+            # Camera parameters
+            'extrinsics': extrinsics,
+            'intrinsics': intrinsics_arr,
+            
+            # Frame info
+            'video_decode_frame': np.array(frame_indices, dtype=np.int64),
+            'video_name': ep_info.get("video_name", "unknown"),
+            
+            # Episode statistics
+            'avg_speed': np.float64(avg_speed),
+            'total_rotvec_degree': np.float64(total_rotvec_degree),
+            'total_transl_dist': np.float64(total_transl_dist),
+            
+            # Annotation info
+            'anno_type': anno_type,
+            'text': ep_info.get("text", {"left": [], "right": []}),
+            'text_rephrase': ep_info.get("text_rephrase", {"left": [], "right": []}),
+            
+            # Hand data
+            'left': left_data,
+            'right': right_data,
         }
+        
+        return episode_dict
 
 if __name__ == "__main__":
     import argparse
