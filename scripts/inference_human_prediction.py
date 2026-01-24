@@ -212,6 +212,12 @@ def main():
         state = np.concatenate([state_left, beta_left, state_right, beta_right], axis=0)
         state_mask = np.array([use_left, use_right], dtype=bool)
         
+        print(f"[Debug] Combined State Assembly:")
+        print(f"    - state_left: {state_left.shape}, beta_left: {beta_left.shape}")
+        print(f"    - state_right: {state_right.shape}, beta_right: {beta_right.shape}")
+        print(f"    - final state: {state.shape}")
+        print(f"    - state_mask: {state_mask} (shape: {state_mask.shape})")
+        
         # Note: chunk_size needs to be determined from config
         chunk_size = configs.get('fwd_pred_next_n', 16)  # Default to 16 if not in config
         action_mask = np.tile(np.array([[use_left, use_right]], dtype=bool), (chunk_size, 1)) 
@@ -222,6 +228,13 @@ def main():
 
         # Use instruction from command-line argument
         instruction = args.instruction
+
+        # Print shapes of input data for debugging
+        print(f"[Debug] Image shape: {image_resized_np.shape}")
+        print(f"[Debug] Combined state shape: {state.shape}")
+        print(f"[Debug] State mask shape: {state_mask.shape}")
+        print(f"[Debug] Action mask shape: {action_mask.shape}")
+        print(f"[Debug] FOV shape: {fov.shape}")
 
         # Model inference using service (includes normalization, padding, and unnormalization)
         print(f"Running VLA inference...")
@@ -237,6 +250,7 @@ def main():
             cfg_scale=5.0,
             sample_times=sample_times,
         )
+        print(f"[Debug] Unnormalized action shape: {unnorm_action.shape}")
         
         fx_exo = intrinsics[0, 0]
         fy_exo = intrinsics[1, 1]
@@ -270,6 +284,11 @@ def main():
                     state=state_right,
                     rel_action=unnorm_action[i, :, 51:102],
                 )
+            
+            if use_left:
+                print(f"[Debug] Sample {i} - Left trajectory shape: {traj_left.shape}")
+            if use_right:
+                print(f"[Debug] Sample {i} - Right trajectory shape: {traj_right.shape}")
         
             left_hand_labels = {
                 'transl_worldspace': traj_left[:, 0:3],
@@ -379,6 +398,14 @@ def get_state(hand_data, hand_side='right'):
     transl_t0 = hand_data[hand_side][0]['transl']  # [3]
     state_t0 = np.concatenate([transl_t0, R_t0_euler, hand_pose_t0_euler])  # [3+3+45=51]
     fov_x = hand_data['fov_x']
+
+    print(f"[Debug] get_state({hand_side}):")
+    print(f"    - hand_pose_t0: {hand_pose_t0.shape}")
+    print(f"    - hand_pose_t0_euler: {hand_pose_t0_euler.shape}")
+    print(f"    - global_orient_mat_t0: {global_orient_mat_t0.shape}")
+    print(f"    - transl_t0: {transl_t0.shape}")
+    print(f"    - state_t0 (final): {state_t0.shape}")
+    print(f"    - beta: {hand_data[hand_side][0]['beta'].shape}")
 
     return state_t0, hand_data[hand_side][0]['beta'], fov_x, None
 
@@ -528,11 +555,15 @@ def _vla_inference_worker(configs_dict, task_queue, result_queue):
                     
                     # Normalize state
                     norm_state = normalizer.normalize_state(state.copy())
+                    print(f"[VLA Process Debug] norm_state shape: {norm_state.shape}")
                     
                     # Pad state and action
                     unified_action_dim = ActionFeature.ALL_FEATURES[1]  # 192
                     unified_state_dim = StateFeature.ALL_FEATURES[1]    # 212
                     
+                    print(f"[VLA Process Debug] Padding inputs to unified dimensions:")
+                    print(f"    - target_state_dim: {unified_state_dim}, target_action_dim: {unified_action_dim}")
+
                     unified_state, unified_state_mask = pad_state_human(
                         state=norm_state,
                         state_mask=state_mask,
@@ -540,12 +571,17 @@ def _vla_inference_worker(configs_dict, task_queue, result_queue):
                         state_dim=normalizer.state_mean.shape[0],
                         unified_state_dim=unified_state_dim,
                     )
+                    print(f"[VLA Process Debug] After pad_state_human:")
+                    print(f"    - unified_state: {unified_state.shape}")
+                    print(f"    - unified_state_mask: {unified_state_mask.shape}")
+
                     _, unified_action_mask = pad_action(
                         actions=None,
                         action_mask=action_mask.copy(),
                         action_dim=normalizer.action_mean.shape[0],
                         unified_action_dim=unified_action_dim
                     )
+                    print(f"[VLA Process Debug] After pad_action (mask): {unified_action_mask.shape}")
                     
                     # Convert to torch and move to GPU
                     fov = torch.from_numpy(fov).unsqueeze(0)
@@ -553,6 +589,13 @@ def _vla_inference_worker(configs_dict, task_queue, result_queue):
                     unified_state_mask = unified_state_mask.unsqueeze(0)
                     unified_action_mask = unified_action_mask.unsqueeze(0)
                     
+                    # Print intermediate shapes in the VLA process
+                    print(f"[VLA Process Debug] Input image shape: {image.shape}")
+                    print(f"[VLA Process Debug] Unified state shape: {unified_state.shape}")
+                    print(f"[VLA Process Debug] Unified state mask shape: {unified_state_mask.shape}")
+                    print(f"[VLA Process Debug] Unified action mask shape: {unified_action_mask.shape}")
+                    print(f"[VLA Process Debug] FOV shape: {fov.shape}")
+
                     # Run inference
                     norm_action = model.predict_action(
                         image=image,
@@ -565,10 +608,14 @@ def _vla_inference_worker(configs_dict, task_queue, result_queue):
                         fov=fov,
                         sample_times=sample_times,
                     )
+                    print(f"[VLA Process Debug] Model output norm_action shape: {norm_action.shape}")
                     
                     # Extract and denormalize action
-                    norm_action = norm_action[:, :, :102]
-                    unnorm_action = normalizer.unnormalize_action(norm_action)
+                    norm_action_sliced = norm_action[:, :, :102]
+                    print(f"[VLA Process Debug] norm_action_sliced (102 dims) shape: {norm_action_sliced.shape}")
+
+                    unnorm_action = normalizer.unnormalize_action(norm_action_sliced)
+                    print(f"[VLA Process Debug] unnorm_action shape: {unnorm_action.shape}")
                     
                     # Convert to numpy for inter-process communication
                     if isinstance(unnorm_action, torch.Tensor):
