@@ -1,0 +1,66 @@
+# VITRA Pipeline Configuration
+
+# --- Hand Reconstruction (Stage 1) ---
+hand_recon:
+  # 手部检测置信度阈值
+  # 调高此值 (如 0.5) 可减少背景误检为手的情况 (幽灵手问题)
+  # 默认值: 0.2
+  detection_threshold: 0.5
+  
+  # 每一批次处理的帧数
+  batch_size: 100
+  
+  # 设备设置
+  use_gpu: true
+  device_id: 0
+
+  # 模型路径 (如果使用默认路径可不必修改)
+  # hawor_model_path: "./weights/hawor/checkpoints/hawor.ckpt"
+  # detector_path: "./weights/hawor/external/detector.pt"
+  # moge_model_path: "Ruicheng/moge-2-vitl"
+  # mano_path: "./weights/mano"
+
+# --- Action Segmentation (Stage 2) ---
+segmentation:
+  # 轨迹平滑系数
+  smoothing_sigma: 1.0
+  
+  # 最小动作片段时长 (秒)
+  min_segment_duration: 0.5
+  
+  # 最小移动距离阈值 (米)
+  # 过滤掉几乎静止的片段
+  min_motion_threshold: 0.01
+
+# --- Language Annotation (Stage 3) ---
+annotation:
+  # LLM 设置
+  llm_provider: "openai"  # options: "openai", "azure", "local"
+  llm_model: "gpt-4o"
+  
+  # 如果需要在此处硬编码 API Key (不推荐上传到仓库)
+  # api_key: "sk-..."
+  
+  # 每个动作生成的改写数量
+  num_rephrase: 3
+
+# --- Video Processing ---
+video:
+  # 支持的视频格式
+  supported_formats: 
+    - ".mp4"
+    - ".MP4"
+    - ".webm"
+    - ".avi"
+    - ".mov"
+
+# --- Output Settings ---
+output:
+  # 是否保存可视化视频 (用于检查结果)
+  save_visualization: true
+  
+  # 是否保存帧索引
+  save_frame_index: true
+  
+  # 是否压缩输出的 .npy 文件
+  compress_output: true

@@ -95,7 +95,7 @@ class HandReconstructionStage(TimedStage):
         
         # Note: HandReconstructor.recon takes a list of images
         try:
-            recon_results = self.reconstructor.recon(frames)
+            recon_results = self.reconstructor.recon(frames, thresh=self.config.detection_threshold)
             
             # Post-process or validation could happen here
             

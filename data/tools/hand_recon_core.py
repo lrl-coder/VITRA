@@ -54,7 +54,7 @@ class HandReconstructor:
         # 初始化 MANO 手部层，用于根据姿态和形状参数生成手部网格
         self.mano = MANO(model_path=config.MANO_PATH).to(device)
 
-    def recon(self, images: list) -> dict:
+    def recon(self, images: list, thresh: float = 0.5) -> dict:
         """
         执行完整的 3D 手部重建过程。
 
@@ -66,6 +66,7 @@ class HandReconstructor:
 
         参数:
             images (list): 输入的图像序列（numpy 数组格式）。
+            thresh (float): 手部检测置信度阈值。
 
         返回:
             dict: 包含左/右手重建结果（位态、网格、修正后的位移等）和 FoV 的字典。
@@ -92,7 +93,7 @@ class HandReconstructor:
 
         # --- 2. 手部姿态与初始位移估计 (使用 HaWoR) ---
         # HaWoR 会返回包含姿态参数、形状参数和相对相机平面的位移信息
-        recon_results = self.hawor_pipeline.recon(images, img_focal, single_image=(N==1))
+        recon_results = self.hawor_pipeline.recon(images, img_focal, thresh=thresh, single_image=(N==1))
 
         recon_results_new_transl = {'left': {}, 'right': {}, 'fov_x': fov_x}
         
