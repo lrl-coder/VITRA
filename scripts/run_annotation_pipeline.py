@@ -63,10 +63,8 @@ def main():
     
     # Initialize Builder
     try:
-        builder = DatasetBuilder()
-        # Override config
-        builder.config = config
-        # Re-initialize stages with new config
+        builder = DatasetBuilder(config=config)
+        # Initialize stages (config is already set)
         builder._init_stages()
         
         logger.info(f"Starting pipeline processing...")

@@ -48,8 +48,11 @@ class DatasetBuilder:
        e. Save output .npy files (Metadata format)
     """
     
-    def __init__(self, config_path: Optional[str] = None):
-        self.config = load_config(config_path)
+    def __init__(self, config_path: Optional[str] = None, config: Optional[PipelineConfig] = None):
+        if config:
+            self.config = config
+        else:
+            self.config = load_config(config_path)
         self.logger = logging.getLogger("DatasetBuilder")
         
         # Initialize Stages
