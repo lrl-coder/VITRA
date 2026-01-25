@@ -41,7 +41,7 @@ data/pipeline/
 
 ## 3. 配置说明 (Configuration)
 
-该流程可以通过 `data/pipeline/config.py` 进行高度配置。您可以在运行时提供自定义的 YAML 配置文件，或直接在代码中修改默认值。
+该流程可以通过 `data/pipeline/config.py` 进行高度配置。您可以在运行时提供自定义的 YAML 配置文件，或直接在代码中修改默认值。推荐使用 yaml 配置文件。
 
 ### 关键配置项：
 
@@ -51,6 +51,7 @@ data/pipeline/
     -   `resize_short_side`: 调整输入帧的短边尺寸 (例如 480)。
 
 -   **`HandReconConfig`** (手部重建配置 - 阶段 2):
+    -   `detection_threshold`: 手部检测置信度阈值 (默认 0.2)。
     -   `detector_path`: 手部检测器模型路径。
     -   `mano_path`: MANO 手部模型权重路径。
     -   `batch_size`: GPU 推理的批处理大小。
