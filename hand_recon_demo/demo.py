@@ -141,6 +141,69 @@ def create_camera_intrinsics(
     return K
 
 
+def save_hand_pose(recon_results: dict, output_path: str):
+    """
+    保存手部位姿数据
+    
+    保存内容：
+        - 手腕的6D位姿：3D位移 + 3D旋转（旋转矩阵）
+        - 手指的15个关节角度（旋转矩阵）
+    
+    参数:
+        recon_results: 重建结果字典，包含 'left' 和 'right' 手部数据
+        output_path: 输出文件路径（.npy格式）
+    """
+    # 准备保存的数据结构
+    pose_data = {
+        'left': {},
+        'right': {},
+        'description': {
+            'wrist_position': '手腕3D位移 (3,) - [x, y, z] 相机坐标系',
+            'wrist_rotation': '手腕旋转矩阵 (3, 3) - 世界坐标系',
+            'finger_rotations': '15个手指关节的旋转矩阵 (15, 3, 3) - 局部坐标系',
+            'joints_3d': '21个手部关节的3D坐标 (21, 3) - 相机坐标系',
+            'note': '旋转矩阵可以转换为轴角(axis-angle)或欧拉角(euler angles)表示'
+        }
+    }
+    
+    for hand_type in ['left', 'right']:
+        hand_data = recon_results.get(hand_type, {})
+        
+        for frame_idx, frame_data in hand_data.items():
+            # 提取手部位姿参数
+            frame_pose = {
+                'wrist_position': frame_data['transl'],  # (3,) 手腕3D位移
+                'wrist_rotation': frame_data['global_orient'],  # (3, 3) 手腕旋转矩阵
+                'finger_rotations': frame_data['hand_pose'],  # (15, 3, 3) 手指关节旋转
+                'joints_3d': frame_data['joints'],  # (21, 3) 所有关节的3D坐标
+                'shape_params': frame_data['beta'],  # (10,) MANO形状参数（可选）
+            }
+            
+            pose_data[hand_type][frame_idx] = frame_pose
+    
+    # 保存为.npy文件
+    np.save(output_path, pose_data)
+    
+    # 统计信息
+    left_frames = len(pose_data['left'])
+    right_frames = len(pose_data['right'])
+    
+    print(f"\n手部位姿数据已保存到: {output_path}")
+    print(f"  左手帧数: {left_frames}")
+    print(f"  右手帧数: {right_frames}")
+    print(f"\n数据格式说明:")
+    print(f"  - 手腕位置: (3,) 向量 [x, y, z]")
+    print(f"  - 手腕旋转: (3, 3) 旋转矩阵")
+    print(f"  - 手指关节: (15, 3, 3) 旋转矩阵")
+    print(f"  - 关节坐标: (21, 3) 3D坐标")
+    print(f"\n加载数据示例:")
+    print(f"  data = np.load('{output_path}', allow_pickle=True).item()")
+    print(f"  left_hand_frame_0 = data['left'][0]")
+    print(f"  wrist_pos = left_hand_frame_0['wrist_position']  # shape: (3,)")
+    print(f"  wrist_rot = left_hand_frame_0['wrist_rotation']  # shape: (3, 3)")
+    print(f"  finger_rot = left_hand_frame_0['finger_rotations']  # shape: (15, 3, 3)")
+
+
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(
@@ -189,6 +252,10 @@ def main():
                         help='不绘制网格线框')
     parser.add_argument('--no_3d', action='store_true',
                         help='不渲染3D视图')
+    
+    # 保存参数
+    parser.add_argument('--save_pose', type=str, default=None,
+                        help='保存手部位姿数据的路径（.npy格式），不指定则不保存')
     
     # 设备参数
     parser.add_argument('--device', type=str, default='cuda',
@@ -300,10 +367,19 @@ def main():
         render_3d=not args.no_3d
     )
     
+    # 6. 保存手部位姿数据（可选）
+    if args.save_pose is not None:
+        print("\n" + "="*60)
+        print("步骤 6: 保存手部位姿数据")
+        print("="*60)
+        save_hand_pose(recon_results, args.save_pose)
+    
     print("\n" + "="*60)
     print("完成！")
     print("="*60)
     print(f"输出视频: {args.output}")
+    if args.save_pose is not None:
+        print(f"位姿数据: {args.save_pose}")
 
 
 if __name__ == "__main__":
