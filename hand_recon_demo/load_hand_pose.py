@@ -60,6 +60,9 @@ def load_and_analyze_hand_pose(pose_file_path):
     print(f"  - 左手帧数: {len(data['left'])}")
     print(f"  - 右手帧数: {len(data['right'])}")
     
+    print(f"\n说明: {data['description']['note']}")
+    print(f"顶点计算: {data['description']['usage']}")
+    
     # 2. 提取第一帧的左手数据（如果存在）
     if len(data['left']) > 0:
         first_frame_idx = list(data['left'].keys())[0]
@@ -70,14 +73,14 @@ def load_and_analyze_hand_pose(pose_file_path):
         
         # 手腕位置（6D姿态的平移部分）
         wrist_pos = left_hand['wrist_position']
-        print(f"\n手腕位置 (3D position):")
+        print(f"\n手腕位置 (transl, 3D position):")
         print(f"  形状: {wrist_pos.shape}")
         print(f"  值: {wrist_pos}")
-        print(f"  含义: [x, y, z] 在相机坐标系中的位置（米）")
+        print(f"  含义: [x, y, z] 在相机坐标系中的位置（米），已修正")
         
         # 手腕旋转（6D姿态的旋转部分）
         wrist_rot = left_hand['wrist_rotation']
-        print(f"\n手腕旋转 (3D rotation):")
+        print(f"\n手腕旋转 (global_orient, 3D rotation):")
         print(f"  形状: {wrist_rot.shape}")
         print(f"  旋转矩阵:\n{wrist_rot}")
         
@@ -91,7 +94,7 @@ def load_and_analyze_hand_pose(pose_file_path):
         
         # 手指关节旋转（15个关节）
         finger_rot = left_hand['finger_rotations']
-        print(f"\n手指关节旋转:")
+        print(f"\n手指关节旋转 (hand_pose):")
         print(f"  形状: {finger_rot.shape}")
         print(f"  说明: 15个手指关节，每个关节一个3x3旋转矩阵")
         
@@ -115,14 +118,47 @@ def load_and_analyze_hand_pose(pose_file_path):
             euler = rotation_matrix_to_euler(rot)
             print(f"  {i:2d}. {name:20s}: [{euler[0]:6.1f}, {euler[1]:6.1f}, {euler[2]:6.1f}]")
         
-        # 关节3D坐标
-        joints_3d = left_hand['joints_3d']
-        print(f"\n手部关节3D坐标:")
-        print(f"  形状: {joints_3d.shape}")
-        print(f"  说明: 21个关节的3D坐标（包括手腕）")
-        print(f"  前5个关节坐标:")
-        for i in range(min(5, len(joints_3d))):
-            print(f"    关节 {i}: {joints_3d[i]}")
+        # 形状参数
+        shape_params = left_hand['shape_params']
+        print(f"\nMANO形状参数 (beta):")
+        print(f"  形状: {shape_params.shape}")
+        print(f"  值: {shape_params}")
+        print(f"  说明: MANO模型的10个形状参数，控制手的大小和形状")
+        
+        # 示例：如何从这些参数重建顶点和关节
+        print(f"\n" + "="*60)
+        print("如何从这些参数重建3D手部网格:")
+        print("="*60)
+        print("""
+from libs.models.mano_wrapper import MANO
+import torch
+
+# 加载MANO模型
+mano = MANO(model_path='./weights/mano').cuda()
+
+# 准备参数
+beta = torch.from_numpy(shape_params).unsqueeze(0).cuda()
+hand_pose = torch.from_numpy(finger_rot).unsqueeze(0).cuda()
+global_orient = torch.from_numpy(wrist_rot).unsqueeze(0).unsqueeze(0).cuda()
+
+# 使用单位旋转生成局部顶点
+identity_rot = torch.eye(3).unsqueeze(0).unsqueeze(0).cuda()
+mano_out = mano(betas=beta, hand_pose=hand_pose, global_orient=identity_rot)
+verts_local = mano_out.vertices[0].cpu().numpy()  # (778, 3)
+joints_local = mano_out.joints[0].cpu().numpy()   # (21, 3)
+
+# 左手需要X轴翻转
+verts_local[:, 0] *= -1
+joints_local[:, 0] *= -1
+
+# 应用全局旋转和平移
+wrist = joints_local[0]
+verts_cam = (wrist_rot @ (verts_local - wrist).T).T + wrist_pos
+joints_cam = (wrist_rot @ (joints_local - wrist).T).T + wrist_pos
+
+# 现在 verts_cam 就是相机坐标系下的顶点 (778, 3)
+# joints_cam 就是相机坐标系下的21个关节 (21, 3)
+        """)
     
     # 3. 提取第一帧的右手数据（如果存在）
     if len(data['right']) > 0:

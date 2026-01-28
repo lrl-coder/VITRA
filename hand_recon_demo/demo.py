@@ -148,6 +148,7 @@ def save_hand_pose(recon_results: dict, output_path: str):
     保存内容：
         - 手腕的6D位姿：3D位移 + 3D旋转（旋转矩阵）
         - 手指的15个关节角度（旋转矩阵）
+        - MANO形状参数
     
     参数:
         recon_results: 重建结果字典，包含 'left' 和 'right' 手部数据
@@ -158,11 +159,12 @@ def save_hand_pose(recon_results: dict, output_path: str):
         'left': {},
         'right': {},
         'description': {
-            'wrist_position': '手腕3D位移 (3,) - [x, y, z] 相机坐标系',
-            'wrist_rotation': '手腕旋转矩阵 (3, 3) - 世界坐标系',
-            'finger_rotations': '15个手指关节的旋转矩阵 (15, 3, 3) - 局部坐标系',
-            'joints_3d': '21个手部关节的3D坐标 (21, 3) - 相机坐标系',
-            'note': '旋转矩阵可以转换为轴角(axis-angle)或欧拉角(euler angles)表示'
+            'wrist_position': '手腕3D位置 (3,) - [x, y, z] 在相机坐标系中（已修正）',
+            'wrist_rotation': '手腕旋转矩阵 (3, 3) - global_orient',
+            'finger_rotations': '15个手指关节的旋转矩阵 (15, 3, 3) - hand_pose',
+            'shape_params': 'MANO形状参数 (10,) - beta',
+            'note': '使用这些参数可以通过MANO模型重建完整的手部网格和关节',
+            'usage': '顶点计算公式: V_cam = global_orient @ (MANO(beta, hand_pose) - wrist) + transl'
         }
     }
     
@@ -170,13 +172,12 @@ def save_hand_pose(recon_results: dict, output_path: str):
         hand_data = recon_results.get(hand_type, {})
         
         for frame_idx, frame_data in hand_data.items():
-            # 提取手部位姿参数
+            # 提取手部位姿参数（只保存实际存在的）
             frame_pose = {
-                'wrist_position': frame_data['transl'],  # (3,) 手腕3D位移
+                'wrist_position': frame_data['transl'],  # (3,) 手腕3D位移（修正后）
                 'wrist_rotation': frame_data['global_orient'],  # (3, 3) 手腕旋转矩阵
                 'finger_rotations': frame_data['hand_pose'],  # (15, 3, 3) 手指关节旋转
-                'joints_3d': frame_data['joints'],  # (21, 3) 所有关节的3D坐标
-                'shape_params': frame_data['beta'],  # (10,) MANO形状参数（可选）
+                'shape_params': frame_data['beta'],  # (10,) MANO形状参数
             }
             
             pose_data[hand_type][frame_idx] = frame_pose
@@ -191,17 +192,18 @@ def save_hand_pose(recon_results: dict, output_path: str):
     print(f"\n手部位姿数据已保存到: {output_path}")
     print(f"  左手帧数: {left_frames}")
     print(f"  右手帧数: {right_frames}")
-    print(f"\n数据格式说明:")
-    print(f"  - 手腕位置: (3,) 向量 [x, y, z]")
-    print(f"  - 手腕旋转: (3, 3) 旋转矩阵")
-    print(f"  - 手指关节: (15, 3, 3) 旋转矩阵")
-    print(f"  - 关节坐标: (21, 3) 3D坐标")
+    print(f"\n保存的数据:")
+    print(f"  - 手腕位置(transl): (3,) 向量 [x, y, z] - 已修正")
+    print(f"  - 手腕旋转(global_orient): (3, 3) 旋转矩阵")
+    print(f"  - 手指关节(hand_pose): (15, 3, 3) 旋转矩阵")
+    print(f"  - 形状参数(beta): (10,) 向量")
     print(f"\n加载数据示例:")
     print(f"  data = np.load('{output_path}', allow_pickle=True).item()")
     print(f"  left_hand_frame_0 = data['left'][0]")
     print(f"  wrist_pos = left_hand_frame_0['wrist_position']  # shape: (3,)")
     print(f"  wrist_rot = left_hand_frame_0['wrist_rotation']  # shape: (3, 3)")
     print(f"  finger_rot = left_hand_frame_0['finger_rotations']  # shape: (15, 3, 3)")
+    print(f"  shape = left_hand_frame_0['shape_params']  # shape: (10,)")
 
 
 def main():
