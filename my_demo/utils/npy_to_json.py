@@ -36,7 +36,7 @@ def recursive_numpy_conversion(obj):
     else:
         return obj
 
-def convert_npy_to_json(npy_file_path):
+def convert_npy_to_json(npy_file_path, output_dir=None):
     if not os.path.exists(npy_file_path):
         print(f"Error: File not found at {npy_file_path}")
         return
@@ -52,9 +52,17 @@ def convert_npy_to_json(npy_file_path):
     if data.ndim == 0 and data.dtype == 'O':
         data = data.item()
 
-    # Create output filename
-    base_name = os.path.splitext(npy_file_path)[0]
-    json_file_path = base_name + ".json"
+    # Determine output path
+    file_name = os.path.basename(npy_file_path)
+    base_name_no_ext = os.path.splitext(file_name)[0]
+    
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+        json_file_path = os.path.join(output_dir, base_name_no_ext + ".json")
+    else:
+        # Default: side-by-side with original
+        dir_name = os.path.dirname(npy_file_path)
+        json_file_path = os.path.join(dir_name, base_name_no_ext + ".json")
 
     print("Converting to JSON compatible format...")
     # We do a pre-conversion pass to handle nested numpy numbers inside dicts/lists 
@@ -72,8 +80,38 @@ def convert_npy_to_json(npy_file_path):
         print(f"Error saving .json file: {e}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Convert an .npy file to .json")
-    parser.add_argument("file", help="Path to the .npy file")
+    parser = argparse.ArgumentParser(description="Convert .npy file(s) to .json")
+    parser.add_argument("path", help="Path to the .npy file or directory containing .npy files")
+    parser.add_argument("--match", "-m", help="String to match in filenames (only for directory mode)", default=None)
+    parser.add_argument("--output", "-o", help="Directory to save the output .json files", default=None)
     
     args = parser.parse_args()
-    convert_npy_to_json(args.file)
+    
+    input_path = os.path.abspath(args.path)
+    
+    if os.path.isfile(input_path):
+        convert_npy_to_json(input_path, args.output)
+    elif os.path.isdir(input_path):
+        print(f"Scanning directory: {input_path}")
+        if args.match:
+            print(f"Filter pattern: '{args.match}'")
+            
+        files = sorted([f for f in os.listdir(input_path) if f.endswith('.npy')])
+        if not files:
+            print("No .npy files found in directory.")
+            sys.exit(0)
+
+        count = 0
+        for f in files:
+            if args.match and args.match not in f:
+                continue
+                
+            full_path = os.path.join(input_path, f)
+            print("-" * 30)
+            convert_npy_to_json(full_path, args.output)
+            count += 1
+            
+        print("-" * 30)
+        print(f"Processed {count} files.")
+    else:
+        print(f"Error: Path does not exist: {input_path}")
