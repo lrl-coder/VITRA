@@ -92,26 +92,23 @@ class HandVisualizer(BaseHandVisualizer):
         # 注意: 我们将直接使用 相机坐标系 作为 世界坐标系
         # 因此 Extrinsics 将设为单位阵
         
+        
         for t in range(T):
             # 处理左手
             if t in recon_results.get('left', {}):
                 res = recon_results['left'][t]
-                if 'vertices' in res and 'transl' in res:
-                    # 获取局部顶点和位移
-                    v_local = res['vertices']  # (778, 3)
-                    transl = res['transl']     # (3,)
-                    # 计算相机坐标系下的顶点：V_cam = V_local + transl
-                    v_cam = v_local + transl
+                if 'vertices' in res:
+                    # vertices已经在相机坐标系中（hand_recon_known_camera.py中已完成变换）
+                    v_cam = res['vertices']  # (778, 3)
                     verts_left_list[t] = v_cam
                     mask_left[t] = 1
             
             # 处理右手
             if t in recon_results.get('right', {}):
                 res = recon_results['right'][t]
-                if 'vertices' in res and 'transl' in res:
-                    v_local = res['vertices']
-                    transl = res['transl']
-                    v_cam = v_local + transl
+                if 'vertices' in res:
+                    # vertices已经在相机坐标系中
+                    v_cam = res['vertices']
                     verts_right_list[t] = v_cam
                     mask_right[t] = 1
 
