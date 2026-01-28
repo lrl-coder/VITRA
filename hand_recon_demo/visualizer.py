@@ -91,26 +91,70 @@ class HandVisualizer(BaseHandVisualizer):
         # 2. 填充手部数据
         # 注意: 我们将直接使用 相机坐标系 作为 世界坐标系
         # 因此 Extrinsics 将设为单位阵
+        # 参考 visualize_core.py 中的 process_single_hand_labels 函数
         
+        # 初始化 MANO 模型
+        from libs.models.mano_wrapper import MANO
+        mano = MANO(model_path='./weights/mano').to('cuda' if torch.cuda.is_available() else 'cpu')
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
         
         for t in range(T):
             # 处理左手
             if t in recon_results.get('left', {}):
                 res = recon_results['left'][t]
-                if 'vertices' in res:
-                    # vertices已经在相机坐标系中（hand_recon_known_camera.py中已完成变换）
-                    v_cam = res['vertices']  # (778, 3)
-                    verts_left_list[t] = v_cam
-                    mask_left[t] = 1
+                
+                # 提取参数
+                beta = torch.from_numpy(res['beta']).unsqueeze(0).to(device)
+                hand_pose = torch.from_numpy(res['hand_pose']).unsqueeze(0).to(device)
+                global_orient = torch.from_numpy(res['global_orient']).unsqueeze(0).to(device)
+                transl = torch.from_numpy(res['transl']).unsqueeze(0).to(device)
+                
+                # MANO前向传播（使用单位旋转作为占位符）
+                identity_rot = torch.eye(3).unsqueeze(0).unsqueeze(0).to(device)
+                mano_out = mano(betas=beta, hand_pose=hand_pose, global_orient=identity_rot)
+                verts = mano_out.vertices[0].cpu().numpy()  # (778, 3)
+                joints = mano_out.joints[0].cpu().numpy()  # (21, 3)
+                
+                # 左手X轴翻转
+                verts[:, 0] *= -1
+                joints[:, 0] *= -1
+                
+                # 应用全局旋转和平移：R @ (V - J0) + T
+                wrist = joints[0]  # 手腕位置
+                global_orient_np = global_orient[0].cpu().numpy()  # (3, 3)
+                transl_np = transl[0].cpu().numpy()  # (3,)
+                
+                # 计算相机坐标系下的顶点
+                verts_cam = (global_orient_np @ (verts - wrist).T).T + transl_np
+                
+                verts_left_list[t] = verts_cam
+                mask_left[t] = 1
             
             # 处理右手
             if t in recon_results.get('right', {}):
                 res = recon_results['right'][t]
-                if 'vertices' in res:
-                    # vertices已经在相机坐标系中
-                    v_cam = res['vertices']
-                    verts_right_list[t] = v_cam
-                    mask_right[t] = 1
+                
+                # 提取参数
+                beta = torch.from_numpy(res['beta']).unsqueeze(0).to(device)
+                hand_pose = torch.from_numpy(res['hand_pose']).unsqueeze(0).to(device)
+                global_orient = torch.from_numpy(res['global_orient']).unsqueeze(0).to(device)
+                transl = torch.from_numpy(res['transl']).unsqueeze(0).to(device)
+                
+                # MANO前向传播
+                identity_rot = torch.eye(3).unsqueeze(0).unsqueeze(0).to(device)
+                mano_out = mano(betas=beta, hand_pose=hand_pose, global_orient=identity_rot)
+                verts = mano_out.vertices[0].cpu().numpy()
+                joints = mano_out.joints[0].cpu().numpy()
+                
+                # 应用全局旋转和平移
+                wrist = joints[0]
+                global_orient_np = global_orient[0].cpu().numpy()
+                transl_np = transl[0].cpu().numpy()
+                
+                verts_cam = (global_orient_np @ (verts - wrist).T).T + transl_np
+                
+                verts_right_list[t] = verts_cam
+                mask_right[t] = 1
 
         # 3. 准备相机参数
         # 世界坐标系 = 相机坐标系

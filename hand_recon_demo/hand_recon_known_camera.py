@@ -107,6 +107,7 @@ class HandReconstructorWithKnownCamera:
         )
         
         # 重新计算全局位移，对齐到 MANO 坐标系
+        # 与 hand_recon_core.py 的处理方式保持一致：只修正 transl
         recon_results_aligned = {'left': {}, 'right': {}, 'camera_intrinsics': camera_intrinsics}
         
         for img_idx in range(N):
@@ -120,41 +121,28 @@ class HandReconstructorWithKnownCamera:
                 # 转换为 Tensor
                 betas = torch.from_numpy(result['beta']).unsqueeze(0).to(self.device)
                 hand_pose = torch.from_numpy(result['hand_pose']).unsqueeze(0).to(self.device)
-                global_orient = torch.from_numpy(result['global_orient']).unsqueeze(0).to(self.device)
                 transl = torch.from_numpy(result['transl']).unsqueeze(0).to(self.device)
                 
-                # MANO 正向传播：生成手部顶点和关节点（使用单位旋转作为占位符）
-                # global_orient会在后面手动应用
-                identity_rot = torch.eye(3).unsqueeze(0).unsqueeze(0).to(self.device)
-                model_output = self.mano(betas=betas, hand_pose=hand_pose, global_orient=identity_rot)
-                verts = model_output.vertices[0]  # (778, 3)
-                joints = model_output.joints[0]  # (21, 3)
+                # MANO 正向传播：生成手部顶点和关节点
+                model_output = self.mano(betas=betas, hand_pose=hand_pose)
+                verts = model_output.vertices[0]
+                joints = model_output.joints[0]
                 
-                # 左手需要镜像翻转（X轴）
+                # 左手需要镜像翻转
                 if hand_type == 'left':
                     verts[:, 0] = -verts[:, 0]
                     joints[:, 0] = -joints[:, 0]
                 
                 # 获取手腕关节（索引0）作为参考点
-                wrist = joints[0]  # (3,)
+                wrist = joints[0]
                 
-                # 应用全局旋转：R @ (V - J0) + T
-                # 将顶点从MANO局部坐标系转换到相机坐标系
-                global_orient_mat = global_orient[0]  # (3, 3)
-                verts_centered = verts - wrist  # (778, 3) - (3,) -> (778, 3)
-                verts_rotated = torch.matmul(verts_centered, global_orient_mat.T)  # (778, 3) @ (3, 3) -> (778, 3)
-                verts_final = verts_rotated + transl[0]  # (778, 3) + (3,) -> (778, 3)
+                # 计算修正后的全局位移
+                # 这样做的目的是将 MANO 局部坐标系的手腕偏移补偿到预测的位移中
+                transl_aligned = wrist + transl
                 
-                # 关节点也需要应用相同的变换
-                joints_centered = joints - wrist
-                joints_rotated = torch.matmul(joints_centered, global_orient_mat.T)
-                joints_final = joints_rotated + transl[0]
-                
-                # 深拷贝结果并更新
+                # 深拷贝结果并更新位移
                 result_aligned = copy.deepcopy(result)
-                result_aligned['transl'] = transl[0].cpu().numpy()
-                result_aligned['vertices'] = verts_final.cpu().numpy()
-                result_aligned['joints'] = joints_final.cpu().numpy()
+                result_aligned['transl'] = transl_aligned[0].cpu().numpy()
                 
                 recon_results_aligned[hand_type][img_idx] = result_aligned
         
