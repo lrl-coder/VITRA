@@ -91,6 +91,9 @@ class HandVisualizer(BaseHandVisualizer):
         # 2. 填充手部数据
         # 注意: 我们将直接使用 相机坐标系 作为 世界坐标系
         # 因此 Extrinsics 将设为单位阵
+        # 重要：PyTorch3D 使用的坐标系与 OpenCV 相机坐标系的 Z 轴方向相反
+        # OpenCV: Z轴指向前方（深度为正）
+        # PyTorch3D: Z轴指向后方（需要将Z取反）
         
         for t in range(T):
             # 处理左手
@@ -102,6 +105,8 @@ class HandVisualizer(BaseHandVisualizer):
                     transl = res['transl']     # (3,)
                     # 计算相机坐标系下的顶点：V_cam = V_local + transl
                     v_cam = v_local + transl
+                    # 修正坐标系：PyTorch3D需要Z轴反向
+                    v_cam[:, 2] = -v_cam[:, 2]
                     verts_left_list[t] = v_cam
                     mask_left[t] = 1
             
@@ -112,6 +117,8 @@ class HandVisualizer(BaseHandVisualizer):
                     v_local = res['vertices']
                     transl = res['transl']
                     v_cam = v_local + transl
+                    # 修正坐标系：PyTorch3D需要Z轴反向
+                    v_cam[:, 2] = -v_cam[:, 2]
                     verts_right_list[t] = v_cam
                     mask_right[t] = 1
 
