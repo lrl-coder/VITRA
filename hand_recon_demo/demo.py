@@ -21,7 +21,7 @@ from hand_recon_known_camera import HandReconstructorWithKnownCamera
 from visualizer import HandVisualizer
 
 
-def load_images_from_video(video_path: str, max_frames: int = None) -> list:
+def load_images_from_video(video_path: str, max_frames: int = None) -> tuple:
     """
     从视频文件加载图像序列
     
@@ -30,17 +30,20 @@ def load_images_from_video(video_path: str, max_frames: int = None) -> list:
         max_frames: 最大加载帧数（None表示全部加载）
     
     返回:
-        图像列表
+        (图像列表, 原始视频帧率)
     """
     cap = cv2.VideoCapture(video_path)
     images = []
     
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS)  # 获取原始视频帧率
+    
     if max_frames is not None:
         frame_count = min(frame_count, max_frames)
     
     print(f"从视频加载图像: {video_path}")
     print(f"总帧数: {frame_count}")
+    print(f"原始帧率: {fps:.2f} fps")
     
     with tqdm(total=frame_count, desc="加载帧") as pbar:
         while True:
@@ -57,7 +60,7 @@ def load_images_from_video(video_path: str, max_frames: int = None) -> list:
     cap.release()
     print(f"成功加载 {len(images)} 帧")
     
-    return images
+    return images, fps
 
 
 def load_images_from_folder(folder_path: str, max_frames: int = None) -> list:
@@ -176,8 +179,8 @@ def main():
                         help='最大处理帧数（用于测试）')
     parser.add_argument('--thresh', type=float, default=0.5,
                         help='手部检测置信度阈值')
-    parser.add_argument('--fps', type=int, default=30,
-                        help='输出视频帧率')
+    parser.add_argument('--fps', type=int, default=None,
+                        help='输出视频帧率（默认使用原始视频帧率，图像序列默认为30）')
     
     # 可视化参数
     parser.add_argument('--no_2d', action='store_true',
@@ -204,12 +207,15 @@ def main():
     print("="*60)
     
     input_path = Path(args.input)
+    source_fps = None  # 原始视频的帧率
+    
     if input_path.is_file():
         # 视频文件
-        images = load_images_from_video(str(input_path), args.max_frames)
+        images, source_fps = load_images_from_video(str(input_path), args.max_frames)
     elif input_path.is_dir():
         # 图像文件夹
         images = load_images_from_folder(str(input_path), args.max_frames)
+        source_fps = 30  # 图像序列默认帧率
     else:
         raise ValueError(f"输入路径不存在: {args.input}")
     
@@ -219,6 +225,14 @@ def main():
     
     H, W = images[0].shape[:2]
     print(f"图像尺寸: {W}x{H}")
+    
+    # 确定输出视频的帧率
+    if args.fps is not None:
+        output_fps = args.fps
+        print(f"使用指定帧率: {output_fps} fps")
+    else:
+        output_fps = source_fps if source_fps is not None else 30
+        print(f"使用原始帧率: {output_fps} fps")
     
     # 2. 创建相机内参矩阵
     print("\n" + "="*60)
@@ -280,7 +294,7 @@ def main():
         recon_results=recon_results,
         camera_intrinsics=camera_intrinsics,
         output_path=args.output,
-        fps=args.fps,
+        fps=output_fps,
         visualize_2d=not args.no_2d,
         visualize_mesh=not args.no_mesh,
         render_3d=not args.no_3d
