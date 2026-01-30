@@ -219,4 +219,82 @@ class HandVisualizer(BaseHandVisualizer):
             out.write(frame_bgr)
             
         out.release()
+        
+        # Post-process with ffmpeg for better compatibility (VSCode, browsers)
+        print("正在使用 ffmpeg 优化视频兼容性...")
+        self._fix_video_with_ffmpeg(output_path, fps)
+        
         print("✅ 视频生成完成！")
+    
+    def _fix_video_with_ffmpeg(self, video_path: str, fps: float):
+        """
+        使用 ffmpeg 重新编码视频以确保更好的兼容性
+        
+        修复问题:
+        1. VSCode 播放问题（使用 H.264 编解码器）
+        2. 视频循环问题（设置正确的时长元数据）
+        3. Web 浏览器兼容性
+        
+        参数:
+            video_path: 视频文件路径
+            fps: 视频帧率
+        """
+        import subprocess
+        import shutil
+        from pathlib import Path
+        
+        video_path = Path(video_path)
+        
+        # 检查 ffmpeg 是否可用
+        if not shutil.which('ffmpeg'):
+            print("⚠️  警告: 未找到 ffmpeg，视频可能存在兼容性问题")
+            print("   请安装 ffmpeg: https://ffmpeg.org/download.html")
+            print("   Windows: 可以使用 'winget install ffmpeg' 或从官网下载")
+            return
+        
+        try:
+            temp_path = video_path.with_suffix('.temp.mp4')
+            
+            # 将原始文件重命名为临时文件
+            video_path.rename(temp_path)
+            
+            # 使用 H.264 和正确的元数据重新编码
+            cmd = [
+                'ffmpeg',
+                '-y',  # 覆盖输出文件
+                '-i', str(temp_path),
+                '-c:v', 'libx264',  # H.264 编解码器
+                '-preset', 'fast',  # 编码速度
+                '-crf', '23',  # 质量（越低越好，18-28 是好的范围）
+                '-pix_fmt', 'yuv420p',  # 兼容性像素格式
+                '-movflags', '+faststart',  # Web 流媒体优化
+                '-r', str(fps),  # 设置帧率
+                '-an',  # 无音频（我们没有音频）
+                str(video_path)
+            ]
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 分钟超时
+            )
+            
+            if result.returncode == 0:
+                # 成功，删除临时文件
+                temp_path.unlink()
+                print("✅ ffmpeg 视频优化成功")
+            else:
+                # 失败，恢复原始文件
+                print(f"⚠️  警告: ffmpeg 编码失败: {result.stderr[:200]}")
+                temp_path.rename(video_path)
+                
+        except subprocess.TimeoutExpired:
+            print("⚠️  警告: ffmpeg 编码超时")
+            if temp_path.exists():
+                temp_path.rename(video_path)
+        except Exception as e:
+            print(f"⚠️  警告: ffmpeg 后处理失败: {e}")
+            if temp_path.exists():
+                temp_path.rename(video_path)
+
