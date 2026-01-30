@@ -247,14 +247,6 @@ def main():
     parser.add_argument('--fps', type=int, default=None,
                         help='输出视频帧率（默认使用原始视频帧率，图像序列默认为30）')
     
-    # 可视化参数
-    parser.add_argument('--no_2d', action='store_true',
-                        help='不绘制2D关键点')
-    parser.add_argument('--no_mesh', action='store_true',
-                        help='不绘制网格线框')
-    parser.add_argument('--no_3d', action='store_true',
-                        help='不渲染3D视图')
-    
     # 保存参数
     parser.add_argument('--save_pose', type=str, default=None,
                         help='保存手部位姿数据的路径（.npy格式），不指定则不保存')
@@ -363,10 +355,7 @@ def main():
         recon_results=recon_results,
         camera_intrinsics=camera_intrinsics,
         output_path=args.output,
-        fps=output_fps,
-        visualize_2d=not args.no_2d,
-        visualize_mesh=not args.no_mesh,
-        render_3d=not args.no_3d
+        fps=output_fps
     )
     
     # 6. 保存手部位姿数据（可选）

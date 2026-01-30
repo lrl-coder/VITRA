@@ -58,8 +58,7 @@ class HandVisualizer(BaseHandVisualizer):
         recon_results: Dict,
         camera_intrinsics: np.ndarray,
         output_path: str,
-        fps: int = 30,
-        **kwargs
+        fps: int = 30
     ):
         """
         生成带有3D手部渲染的可视化视频
