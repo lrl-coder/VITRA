@@ -202,9 +202,15 @@ class HandVisualizer(BaseHandVisualizer):
         print(f"正在保存视频到 {output_path} ...")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
-        # 使用 OpenCV 保存视，确保色彩空间正确 (RGB -> BGR)
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        # 使用 OpenCV 保存视频，确保色彩空间正确 (RGB -> BGR)
+        # 使用 H.264 编码器以获得更好的兼容性（VSCode、浏览器等都支持）
+        fourcc = cv2.VideoWriter_fourcc(*'avc1')  # 或者使用 'H264', 'X264'
         out = cv2.VideoWriter(output_path, fourcc, fps, (W, H))
+        
+        if not out.isOpened():
+            print("警告: 无法使用 H.264 编码器，尝试使用 mp4v...")
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(output_path, fourcc, fps, (W, H))
         
         for frame in rendered_frames:
             # BaseHandVisualizer 返回的是 RGB 格式 (在 _render_hand_trajectory 结尾处转换过)
