@@ -15,13 +15,21 @@
 ```
 hand_recon_demo/
 ├── hand_recon_known_camera.py  # 手部重建核心模块
-├── visualizer.py               # 可视化模块
+├── visualizer.py               # 可视化模块（基于PyTorch3D）
 ├── demo.py                     # 主程序
+├── load_hand_pose.py           # 位姿数据加载工具
 ├── requirements.txt            # 依赖列表
-├── README.md                   # 说明文档
-└── examples/                   # 示例脚本
-    └── run_demo.sh            # 运行示例
+├── check_environment.py        # 环境检查脚本
+├── README.md                   # 使用说明文档
+├── TECHNICAL_OVERVIEW.md       # 技术概述与实现详解
+├── QUICKSTART.md               # 快速开始指南
+└── run_demo.sh / .bat          # 运行示例脚本
 ```
+
+📖 **推荐阅读顺序**：
+1. `README.md` - 了解基本用法
+2. `QUICKSTART.md` - 快速上手
+3. `TECHNICAL_OVERVIEW.md` - 深入了解技术原理与实现细节
 
 ## 📦 依赖安装
 
@@ -165,20 +173,116 @@ K = [fx,  0, cx]
 ### 处理流程
 
 1. **图像加载**：从视频或图像文件夹加载图像序列
-2. **手部检测**：使用检测器定位图像中的手部区域
+2. **手部检测**：使用YOLOv8检测器定位图像中的手部区域
 3. **姿态估计**：使用HaWoR估计手部的姿态、形状和位移参数
-4. **MANO建模**：使用MANO模型生成3D手部网格
-5. **坐标对齐**：将手部坐标对齐到全局坐标系
-6. **可视化**：生成2D/3D可视化并输出视频
+4. **MANO建模**：使用MANO模型生成3D手部网格（778个顶点，21个关节）
+5. **坐标对齐**：将手部坐标对齐到相机坐标系
+6. **PyTorch3D渲染**：生成高质量3D可视化并输出视频
 
-### 与 `hand_recon_core.py` 的区别
+### 核心技术
 
-| 特性 | hand_recon_core.py | 本Demo |
-|------|-------------------|--------|
-| 相机参数估计 | 使用MoGe自动估计FOV | 使用已知内参，无需估计 |
-| 适用场景 | 未知相机参数 | 已知相机参数 |
-| 处理速度 | 较慢（需要MoGe推理） | 较快 |
-| 可视化 | 无 | 完整的2D/3D可视化 |
+| 组件 | 技术 | 说明 |
+|------|------|------|
+| 手部检测 | YOLOv8 | 定位左右手区域 |
+| 姿态估计 | HaWoR | 估计MANO参数 |
+| 3D建模 | MANO | 参数化手部模型 |
+| 渲染 | PyTorch3D | 专业级3D渲染 |
+
+## 💾 保存的位姿数据结构
+
+使用 `--save_pose output.npy` 可以保存手部位姿数据供后续使用。
+
+### 数据格式
+
+```python
+{
+    'left': {
+        frame_idx: {
+            'wrist_position': np.ndarray,    # (3,) 手腕3D位置 [x, y, z]
+            'wrist_rotation': np.ndarray,    # (3, 3) 手腕旋转矩阵
+            'finger_rotations': np.ndarray,  # (15, 3, 3) 手指关节旋转矩阵
+            'shape_params': np.ndarray,      # (10,) MANO形状参数
+        },
+        ...  # 多帧数据
+    },
+    'right': {
+        frame_idx: {...},  # 与left结构相同
+        ...
+    },
+    'description': {
+        'wrist_position': '手腕3D位置 (3,) - [x, y, z] 在相机坐标系中',
+        'wrist_rotation': '手腕旋转矩阵 (3, 3) - global_orient',
+        'finger_rotations': '15个手指关节的旋转矩阵 (15, 3, 3) - hand_pose',
+        'shape_params': 'MANO形状参数 (10,) - beta',
+        'usage': '顶点计算公式: V_cam = global_orient @ (MANO(beta, hand_pose) - wrist) + transl'
+    }
+}
+```
+
+### 参数说明
+
+| 参数 | 形状 | 说明 |
+|------|------|------|
+| `wrist_position` | `(3,)` | 手腕在相机坐标系下的3D位置 [x, y, z]（米） |
+| `wrist_rotation` | `(3, 3)` | 手腕的全局旋转矩阵（global_orient） |
+| `finger_rotations` | `(15, 3, 3)` | 15个手指关节的局部旋转矩阵 |
+| `shape_params` | `(10,)` | MANO PCA形状参数（控制手部大小、粗细） |
+
+#### 关节索引说明
+
+15个手指关节对应：
+- **拇指**：关节 0-2（3个）
+- **食指**：关节 3-5（3个）
+- **中指**：关节 6-8（3个）
+- **无名指**：关节 9-11（3个）
+- **小指**：关节 12-14（3个）
+
+### 加载和使用示例
+
+```python
+import numpy as np
+
+# 加载数据
+data = np.load('hand_pose.npy', allow_pickle=True).item()
+
+# 访问左手第0帧数据
+left_frame_0 = data['left'][0]
+
+# 提取参数
+wrist_pos = left_frame_0['wrist_position']      # (3,)
+wrist_rot = left_frame_0['wrist_rotation']      # (3, 3)
+finger_rot = left_frame_0['finger_rotations']   # (15, 3, 3)
+shape = left_frame_0['shape_params']            # (10,)
+
+print(f"手腕位置: {wrist_pos}")
+print(f"形状参数: {shape}")
+
+# 使用MANO重建手部网格
+from libs.models.mano_wrapper import MANO
+import torch
+
+mano = MANO(model_path='./weights/mano')
+output = mano(
+    betas=torch.tensor(shape).unsqueeze(0),
+    hand_pose=torch.tensor(finger_rot).unsqueeze(0)
+)
+
+vertices = output.vertices[0]  # (778, 3) 手部顶点
+joints = output.joints[0]      # (21, 3) 手部关节
+
+# 应用全局变换到相机坐标系
+wrist_joint = joints[0]
+vertices_cam = (wrist_rot @ (vertices - wrist_joint).T).T + wrist_pos
+```
+
+### 坐标系说明
+
+**相机坐标系**（右手系）：
+- **X轴**：向右
+- **Y轴**：向下
+- **Z轴**：垂直于图像平面向前（深度方向）
+
+所有保存的3D坐标都在相机坐标系中。
 
 ## 🐛 常见问题
 

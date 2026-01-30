@@ -42,54 +42,15 @@ run_demo.bat
 ```bash
 chmod +x run_demo.sh
 ./run_demo.sh
-```
 
 ### 步骤4: 查看结果
 
 输出视频保存在指定路径（默认 `./output/hand_recon_result.mp4`）
-
-## 📋 最小示例
-
-```python
-from hand_recon_known_camera import HandReconstructorWithKnownCamera
-import cv2
-import numpy as np
-
-# 1. 初始化重建器
-reconstructor = HandReconstructorWithKnownCamera()
-
-# 2. 加载图像
-cap = cv2.VideoCapture('video.mp4')
-images = []
-while True:
-    ret, frame = cap.read()
-    if not ret: break
-    images.append(frame)
-cap.release()
-
-# 3. 准备相机内参
-H, W = images[0].shape[:2]
-K = np.array([
-    [1000,    0, W/2],
-    [   0, 1000, H/2],
-    [   0,    0,   1]
-], dtype=np.float32)
-
-# 4. 执行重建
-results = reconstructor.recon(images, K)
-
-# 5. 访问结果
-for frame_idx in results['left']:
-    hand_data = results['left'][frame_idx]
-    vertices = hand_data['vertices']  # 3D顶点
-    joints = hand_data['joints']      # 3D关键点
-    print(f"帧 {frame_idx}: 顶点数 {len(vertices)}")
-```
+手部位姿数据保存在指定路径（`.npy`文件）
 
 ## ❓ 常见问题快速解答
 
 **Q: 不知道相机焦距怎么办？**
-```bash
 # 尝试使用图像宽度作为初始值
 python demo.py --input video.mp4 --output result.mp4 --camera_fx 1920 --camera_fy 1920
 ```
