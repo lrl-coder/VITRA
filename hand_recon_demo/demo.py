@@ -143,67 +143,93 @@ def create_camera_intrinsics(
 
 def save_hand_pose(recon_results: dict, output_path: str):
     """
-    保存手部位姿数据
+    保存手部位姿数据（与原始数据库字段名一致）
     
     保存内容：
-        - 手腕的6D位姿：3D位移 + 3D旋转（旋转矩阵）
-        - 手指的15个关节角度（旋转矩阵）
-        - MANO形状参数
+        - beta: MANO形状参数
+        - global_orient_camspace: 手腕旋转矩阵（相机坐标系）
+        - hand_pose: 手指关节旋转矩阵
+        - transl_camspace: 手腕3D位移（相机坐标系）
+        - joints_camspace: 手部关节3D位置（相机坐标系）
     
     参数:
         recon_results: 重建结果字典，包含 'left' 和 'right' 手部数据
         output_path: 输出文件路径（.npy格式）
     """
-    # 准备保存的数据结构
+    # 准备保存的数据结构（字段名与data.md中的原始数据库一致）
     pose_data = {
         'left': {},
         'right': {},
         'description': {
-            'wrist_position': '手腕3D位置 (3,) - [x, y, z] 在相机坐标系中（已修正）',
-            'wrist_rotation': '手腕旋转矩阵 (3, 3) - global_orient',
-            'finger_rotations': '15个手指关节的旋转矩阵 (15, 3, 3) - hand_pose',
-            'shape_params': 'MANO形状参数 (10,) - beta',
-            'note': '使用这些参数可以通过MANO模型重建完整的手部网格和关节',
-            'usage': '顶点计算公式: V_cam = global_orient @ (MANO(beta, hand_pose) - wrist) + transl'
+            'beta': 'MANO形状参数 (10,)',
+            'global_orient_camspace': '手腕旋转矩阵 (Tx3x3) - 从MANO规范空间到相机空间',
+            'hand_pose': '手指关节旋转矩阵 (Tx15x3x3) - 局部手关节旋转',
+            'transl_camspace': '手腕3D位移 (Tx3) - 相机坐标系',
+            'joints_camspace': '手部关节3D位置 (Tx21x3) - 相机坐标系',
+            'note': '字段名与原始数据库保持一致（参见data/data.md）',
+            'usage': '顶点计算公式: V_cam = global_orient_camspace @ (MANO(beta, hand_pose) - wrist) + transl_camspace'
         }
     }
     
     for hand_type in ['left', 'right']:
         hand_data = recon_results.get(hand_type, {})
         
-        for frame_idx, frame_data in hand_data.items():
-            # 提取手部位姿参数（只保存实际存在的）
-            frame_pose = {
-                'wrist_position': frame_data['transl'],  # (3,) 手腕3D位移（修正后）
-                'wrist_rotation': frame_data['global_orient'],  # (3, 3) 手腕旋转矩阵
-                'finger_rotations': frame_data['hand_pose'],  # (15, 3, 3) 手指关节旋转
-                'shape_params': frame_data['beta'],  # (10,) MANO形状参数
+        # 收集所有帧的数据
+        all_global_orient = []
+        all_hand_pose = []
+        all_transl = []
+        all_joints = []
+        all_beta = []
+        
+        for frame_idx in sorted(hand_data.keys()):
+            frame_data = hand_data[frame_idx]
+            all_global_orient.append(frame_data['global_orient'])  # (3, 3)
+            all_hand_pose.append(frame_data['hand_pose'])  # (15, 3, 3)
+            all_transl.append(frame_data['transl'])  # (3,)
+            all_beta.append(frame_data['beta'])  # (10,)
+            
+            # 如果有joints数据也保存
+            if 'joints' in frame_data:
+                all_joints.append(frame_data['joints'])  # (21, 3)
+        
+        # 转换为numpy数组并保存（字段名与数据库一致）
+        if len(all_global_orient) > 0:
+            # 计算beta参数的平均值（所有帧的平均）
+            beta_mean = np.mean(all_beta, axis=0)  # (10,)
+            
+            pose_data[hand_type] = {
+                'beta': beta_mean,  # (10,) - 所有帧的平均值
+                'global_orient_camspace': np.array(all_global_orient),  # (T, 3, 3)
+                'hand_pose': np.array(all_hand_pose),  # (T, 15, 3, 3)
+                'transl_camspace': np.array(all_transl),  # (T, 3)
+                'joints_camspace': np.array(all_joints)  # (T, 21, 3)
             }
             
-            pose_data[hand_type][frame_idx] = frame_pose
     
     # 保存为.npy文件
     np.save(output_path, pose_data)
     
     # 统计信息
-    left_frames = len(pose_data['left'])
-    right_frames = len(pose_data['right'])
+    left_frames = len(pose_data['left'].get('global_orient_camspace', [])) if 'beta' in pose_data['left'] else 0
+    right_frames = len(pose_data['right'].get('global_orient_camspace', [])) if 'beta' in pose_data['right'] else 0
     
     print(f"\n手部位姿数据已保存到: {output_path}")
     print(f"  左手帧数: {left_frames}")
     print(f"  右手帧数: {right_frames}")
-    print(f"\n保存的数据:")
-    print(f"  - 手腕位置(transl): (3,) 向量 [x, y, z] - 已修正")
-    print(f"  - 手腕旋转(global_orient): (3, 3) 旋转矩阵")
-    print(f"  - 手指关节(hand_pose): (15, 3, 3) 旋转矩阵")
-    print(f"  - 形状参数(beta): (10,) 向量")
+    print(f"\n保存的数据（字段名与原始数据库一致）:")
+    print(f"  - beta: (10,) MANO形状参数")
+    print(f"  - global_orient_camspace: (T, 3, 3) 手腕旋转矩阵")
+    print(f"  - hand_pose: (T, 15, 3, 3) 手指关节旋转矩阵")
+    print(f"  - transl_camspace: (T, 3) 手腕3D位移")
+    if left_frames > 0 and 'joints_camspace' in pose_data['left']:
+        print(f"  - joints_camspace: (T, 21, 3) 手部关节3D位置")
     print(f"\n加载数据示例:")
     print(f"  data = np.load('{output_path}', allow_pickle=True).item()")
-    print(f"  left_hand_frame_0 = data['left'][0]")
-    print(f"  wrist_pos = left_hand_frame_0['wrist_position']  # shape: (3,)")
-    print(f"  wrist_rot = left_hand_frame_0['wrist_rotation']  # shape: (3, 3)")
-    print(f"  finger_rot = left_hand_frame_0['finger_rotations']  # shape: (15, 3, 3)")
-    print(f"  shape = left_hand_frame_0['shape_params']  # shape: (10,)")
+    print(f"  left_hand = data['left']")
+    print(f"  beta = left_hand['beta']  # shape: (10,)")
+    print(f"  global_orient = left_hand['global_orient_camspace']  # shape: (T, 3, 3)")
+    print(f"  hand_pose = left_hand['hand_pose']  # shape: (T, 15, 3, 3)")
+    print(f"  transl = left_hand['transl_camspace']  # shape: (T, 3)")
 
 
 def main():
