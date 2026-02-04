@@ -141,7 +141,7 @@ def create_camera_intrinsics(
     return K
 
 
-def save_hand_pose(recon_results: dict, output_path: str):
+def save_hand_pose(recon_results: dict, output_path: str, total_frames: int):
     """
     保存手部位姿数据（与原始数据库字段名一致）
     
@@ -151,10 +151,12 @@ def save_hand_pose(recon_results: dict, output_path: str):
         - hand_pose: 手指关节旋转矩阵
         - transl_camspace: 手腕3D位移（相机坐标系）
         - joints_camspace: 手部关节3D位置（相机坐标系）
+        - kept_frames: 有效重建帧的0-1掩码
     
     参数:
         recon_results: 重建结果字典，包含 'left' 和 'right' 手部数据
         output_path: 输出文件路径（.npy格式）
+        total_frames: 视频的总帧数
     """
     # 准备保存的数据结构（字段名与data.md中的原始数据库一致）
     pose_data = {
@@ -166,6 +168,7 @@ def save_hand_pose(recon_results: dict, output_path: str):
             'hand_pose': '手指关节旋转矩阵 (Tx15x3x3) - 局部手关节旋转',
             'transl_camspace': '手腕3D位移 (Tx3) - 相机坐标系',
             'joints_camspace': '手部关节3D位置 (Tx21x3) - 相机坐标系',
+            'kept_frames': '有效重建帧的0-1掩码 (total_frames,) - 1表示有检测结果，0表示无检测结果',
             'note': '字段名与原始数据库保持一致（参见data/data.md）',
             'usage': '顶点计算公式: V_cam = global_orient_camspace @ (MANO(beta, hand_pose) - wrist) + transl_camspace'
         }
@@ -197,12 +200,20 @@ def save_hand_pose(recon_results: dict, output_path: str):
             # 计算beta参数的平均值（所有帧的平均）
             beta_mean = np.mean(all_beta, axis=0)  # (10,)
             
+            # 生成kept_frames掩码：长度为total_frames，有检测结果的帧为1，无检测的为0
+            kept_frames = [0] * total_frames
+            detected_frame_indices = sorted(hand_data.keys())
+            for frame_idx in detected_frame_indices:
+                if frame_idx < total_frames:  # 防止索引越界
+                    kept_frames[frame_idx] = 1
+            
             pose_data[hand_type] = {
                 'beta': beta_mean,  # (10,) - 所有帧的平均值
                 'global_orient_camspace': np.array(all_global_orient),  # (T, 3, 3)
                 'hand_pose': np.array(all_hand_pose),  # (T, 15, 3, 3)
                 'transl_camspace': np.array(all_transl),  # (T, 3)
-                'joints_camspace': np.array(all_joints)  # (T, 21, 3)
+                'joints_camspace': np.array(all_joints),  # (T, 21, 3)
+                'kept_frames': kept_frames  # (total_frames,) - 0-1掩码
             }
             
     
@@ -221,8 +232,8 @@ def save_hand_pose(recon_results: dict, output_path: str):
     print(f"  - global_orient_camspace: (T, 3, 3) 手腕旋转矩阵")
     print(f"  - hand_pose: (T, 15, 3, 3) 手指关节旋转矩阵")
     print(f"  - transl_camspace: (T, 3) 手腕3D位移")
-    if left_frames > 0 and 'joints_camspace' in pose_data['left']:
-        print(f"  - joints_camspace: (T, 21, 3) 手部关节3D位置")
+    print(f"  - joints_camspace: (T, 21, 3) 手部关节3D位置")
+    print(f"  - kept_frames: ({total_frames},) 有效帧掩码（1=有检测，0=无检测）")
     print(f"\n加载数据示例:")
     print(f"  data = np.load('{output_path}', allow_pickle=True).item()")
     print(f"  left_hand = data['left']")
@@ -230,6 +241,8 @@ def save_hand_pose(recon_results: dict, output_path: str):
     print(f"  global_orient = left_hand['global_orient_camspace']  # shape: (T, 3, 3)")
     print(f"  hand_pose = left_hand['hand_pose']  # shape: (T, 15, 3, 3)")
     print(f"  transl = left_hand['transl_camspace']  # shape: (T, 3)")
+    print(f"  kept_frames = left_hand['kept_frames']  # shape: ({total_frames},)")
+    print(f"  # kept_frames[i]=1 表示第i帧有检测结果，=0表示无检测结果")
 
 
 def main():
@@ -389,7 +402,7 @@ def main():
         print("\n" + "="*60)
         print("步骤 6: 保存手部位姿数据")
         print("="*60)
-        save_hand_pose(recon_results, args.save_pose)
+        save_hand_pose(recon_results, args.save_pose, total_frames=len(images))
     
     print("\n" + "="*60)
     print("完成！")
