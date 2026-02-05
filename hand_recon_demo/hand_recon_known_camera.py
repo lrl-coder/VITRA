@@ -121,10 +121,13 @@ class HandReconstructorWithKnownCamera:
                 # 转换为 Tensor
                 betas = torch.from_numpy(result['beta']).unsqueeze(0).to(self.device)
                 hand_pose = torch.from_numpy(result['hand_pose']).unsqueeze(0).to(self.device)
+                global_orient = torch.from_numpy(result['global_orient']).unsqueeze(0).to(self.device)
                 transl = torch.from_numpy(result['transl']).unsqueeze(0).to(self.device)
                 
                 # MANO 正向传播：生成手部顶点和关节点
-                model_output = self.mano(betas=betas, hand_pose=hand_pose)
+                # NOTE: 必须传入 global_orient，因为 wrist 的位移受全局旋转影响
+                # hand_pose (指关节) 是局部相对旋转，不需要补偿；但 global_orient 是相机系下的全局旋转，必须参与计算
+                model_output = self.mano(betas=betas, hand_pose=hand_pose, global_orient=global_orient)
                 verts = model_output.vertices[0]
                 joints = model_output.joints[0]
                 
