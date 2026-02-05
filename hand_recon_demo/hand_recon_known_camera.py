@@ -148,7 +148,7 @@ class HandReconstructorWithKnownCamera:
                 # 关节点需要应用全局旋转和位移才能得到相机坐标系下的位置
                 global_orient = torch.from_numpy(result['global_orient']).unsqueeze(0).to(self.device)  # (1, 3, 3)
                 joints_camspace = torch.matmul(global_orient, joints.unsqueeze(-1)).squeeze(-1) + transl_aligned  # (21, 3)
-                result_aligned['joints'] = joints_camspace[0].cpu().numpy()  # (21, 3)
+                result_aligned['joints'] = joints_camspace.cpu().numpy()  # (21, 3)
                 
                 recon_results_aligned[hand_type][img_idx] = result_aligned
         
