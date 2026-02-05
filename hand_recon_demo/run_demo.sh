@@ -66,15 +66,18 @@ read_intrinsics() {
         return 1
     fi
     
-    # 使用Python读取annotation npy文件并提取相机参数
-    # intrinsics格式: [[fx, 0, cx], [0, fy, cy], [0, 0, 1]]
-    local params=$(python -c "
+    # 创建临时Python脚本
+    local temp_script=$(mktemp /tmp/read_intrinsics_XXXXXX.py)
+    
+    cat > "$temp_script" << 'PYTHON_SCRIPT'
 import numpy as np
 import sys
 
+annotation_file = sys.argv[1]
+
 try:
     # 加载annotation npy文件
-    data = np.load('$annotation_file', allow_pickle=True).item()
+    data = np.load(annotation_file, allow_pickle=True).item()
     
     # 从'intrinsics'字段获取相机内参矩阵
     if 'intrinsics' not in data:
@@ -95,10 +98,17 @@ try:
 except Exception as e:
     print(f'ERROR: {e}', file=sys.stderr)
     sys.exit(1)
-" 2>&1)
+PYTHON_SCRIPT
+    
+    # 执行Python脚本
+    local params=$(python "$temp_script" "$annotation_file" 2>&1)
+    local exit_code=$?
+    
+    # 删除临时文件
+    rm -f "$temp_script"
     
     # 检查Python脚本是否成功执行
-    if [[ "$params" == ERROR:* ]]; then
+    if [ $exit_code -ne 0 ] || [[ "$params" == ERROR:* ]]; then
         echo "$params"
         return 1
     fi
@@ -114,6 +124,7 @@ except Exception as e:
     
     return 0
 }
+
 
 # 统计变量
 total_files=0
