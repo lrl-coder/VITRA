@@ -111,40 +111,30 @@ def create_camera_intrinsics(
     """
     创建相机内参矩阵
     
-    ⚠️ 重要说明：
-    由于HaWoR模型假设主点在图像中心，本函数会强制使用图像中心作为主点，
-    即使提供了cx/cy参数也会被忽略。这是为了确保重建的3D坐标与可视化一致。
-    
     参数:
         fx: X方向焦距
         fy: Y方向焦距
-        cx: 主点X坐标（会被忽略，强制使用图像中心）
-        cy: 主点Y坐标（会被忽略，强制使用图像中心）
-        image_width: 图像宽度（必需）
-        image_height: 图像高度（必需）
+        cx: 主点X坐标（None则使用图像中心）
+        cy: 主点Y坐标（None则使用图像中心）
+        image_width: 图像宽度
+        image_height: 图像高度
     
     返回:
-        3x3的相机内参矩阵K，主点固定为图像中心
+        3x3的相机内参矩阵K
     """
-    if image_width is None or image_height is None:
-        raise ValueError("必须提供 image_width 和 image_height")
+    if cx is None:
+        if image_width is None:
+            raise ValueError("必须提供 cx 或 image_width")
+        cx = image_width / 2.0
     
-    # ⚠️ 强制使用图像中心作为主点（HaWoR假设）
-    cx_center = image_width / 2.0
-    cy_center = image_height / 2.0
-    
-    # 如果用户提供了不同的cx/cy，发出警告
-    if cx is not None and abs(cx - cx_center) > 1e-3:
-        print(f"⚠️  警告: 用户提供的cx={cx:.2f}被忽略，强制使用图像中心cx={cx_center:.2f}")
-        print(f"   原因: HaWoR模型假设主点在图像中心，使用其他值会导致3D坐标不准确")
-    
-    if cy is not None and abs(cy - cy_center) > 1e-3:
-        print(f"⚠️  警告: 用户提供的cy={cy:.2f}被忽略，强制使用图像中心cy={cy_center:.2f}")
-        print(f"   原因: HaWoR模型假设主点在图像中心，使用其他值会导致3D坐标不准确")
+    if cy is None:
+        if image_height is None:
+            raise ValueError("必须提供 cy 或 image_height")
+        cy = image_height / 2.0
     
     K = np.array([
-        [fx,  0, cx_center],
-        [ 0, fy, cy_center],
+        [fx,  0, cx],
+        [ 0, fy, cy],
         [ 0,  0,  1]
     ], dtype=np.float32)
     
@@ -273,9 +263,9 @@ def main():
     parser.add_argument('--camera_fy', type=float, required=True,
                         help='相机焦距 fy')
     parser.add_argument('--camera_cx', type=float, default=None,
-                        help='相机主点 cx（⚠️ 注意：此参数会被忽略，主点强制使用图像中心）')
+                        help='相机主点 cx（默认使用图像中心）')
     parser.add_argument('--camera_cy', type=float, default=None,
-                        help='相机主点 cy（⚠️ 注意：此参数会被忽略，主点强制使用图像中心）')
+                        help='相机主点 cy（默认使用图像中心）')
     
     # 模型路径参数
     parser.add_argument('--hawor_model', type=str,
