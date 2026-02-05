@@ -140,9 +140,15 @@ class HandReconstructorWithKnownCamera:
                 # 这样做的目的是将 MANO 局部坐标系的手腕偏移补偿到预测的位移中
                 transl_aligned = wrist + transl
                 
-                # 深拷贝结果并更新位移
+                # 深拷贝结果并更新位移和关节点
                 result_aligned = copy.deepcopy(result)
                 result_aligned['transl'] = transl_aligned[0].cpu().numpy()
+                
+                # 保存关节点数据（相机坐标系）
+                # 关节点需要应用全局旋转和位移才能得到相机坐标系下的位置
+                global_orient = torch.from_numpy(result['global_orient']).unsqueeze(0).to(self.device)  # (1, 3, 3)
+                joints_camspace = torch.matmul(global_orient, joints.unsqueeze(-1)).squeeze(-1) + transl_aligned  # (21, 3)
+                result_aligned['joints'] = joints_camspace[0].cpu().numpy()  # (21, 3)
                 
                 recon_results_aligned[hand_type][img_idx] = result_aligned
         
