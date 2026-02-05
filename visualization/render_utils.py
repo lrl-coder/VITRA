@@ -83,6 +83,7 @@ class Renderer():
         height: int,
         focal_length: Union[float, Tuple[float, float]],
         device: torch.device,
+        principal_point: Tuple[float, float] = None,  # 新增：主点参数 (cx, cy)
         bin_size: int = 512,
         max_faces_per_bin: int = 200000,
     ):
@@ -90,6 +91,7 @@ class Renderer():
         self.width = width
         self.height = height
         self.focal_length = focal_length
+        self.principal_point = principal_point  # 保存主点参数
         self.device = device
 
         # Initialize camera parameters
@@ -140,9 +142,15 @@ class Renderer():
         else:
             fx = fy = self.focal_length
 
+        # 使用传入的主点参数，如果没有则默认使用图像中心
+        if self.principal_point is not None:
+            cx, cy = self.principal_point
+        else:
+            cx, cy = self.width / 2, self.height / 2
+
         self.K = torch.tensor(
-            [[fx, 0, self.width / 2],
-             [0, fy, self.height / 2],
+            [[fx, 0, cx],
+             [0, fy, cy],
              [0, 0, 1]],
             device=self.device,
             dtype=torch.float32,

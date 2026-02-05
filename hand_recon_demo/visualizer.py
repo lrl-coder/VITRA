@@ -161,16 +161,19 @@ class HandVisualizer(BaseHandVisualizer):
         R_w2c = np.repeat(np.eye(3, dtype=np.float32)[None, ...], T, axis=0)  # (T, 3, 3)
         t_w2c = np.zeros((T, 3, 1), dtype=np.float32)  # (T, 3, 1)
         
+        # 从内参矩阵提取完整的相机参数
         fx = camera_intrinsics[0, 0]
         fy = camera_intrinsics[1, 1]
+        cx = camera_intrinsics[0, 2]
+        cy = camera_intrinsics[1, 2]
         
-        # 4. 初始化渲染器
+        # 4. 初始化渲染器（传递完整的内参，包括主点）
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         if device == 'cpu':
             print("警告: 未检测到 CUDA，渲染可能较慢或不支持。")
             
         try:
-            renderer = Renderer(W, H, (fx, fy), device)
+            renderer = Renderer(W, H, (fx, fy), device, principal_point=(cx, cy))
         except Exception as e:
             print(f"初始化渲染器失败: {e}")
             return
