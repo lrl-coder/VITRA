@@ -122,6 +122,7 @@ class HandReconstructorWithKnownCamera:
                 betas = torch.from_numpy(result['beta']).unsqueeze(0).to(self.device)
                 hand_pose = torch.from_numpy(result['hand_pose']).unsqueeze(0).to(self.device)
                 transl = torch.from_numpy(result['transl']).unsqueeze(0).to(self.device)
+                global_orient = torch.from_numpy(result['global_orient']).unsqueeze(0).to(self.device)  # (1, 3, 3)
                 
                 # MANO 正向传播：生成手部顶点和关节点
                 model_output = self.mano(betas=betas, hand_pose=hand_pose)
@@ -134,11 +135,15 @@ class HandReconstructorWithKnownCamera:
                     joints[:, 0] = -joints[:, 0]
                 
                 # 获取手腕关节（索引0）作为参考点
-                wrist = joints[0]
+                wrist = joints[0]  # (3,) 在 MANO 局部坐标系中
                 
-                # 计算修正后的全局位移
-                # 这样做的目的是将 MANO 局部坐标系的手腕偏移补偿到预测的位移中
-                transl_aligned = wrist + transl
+                # 计算修正后的全局位移（严格的数学版本）
+                # HaWoR 预测的 transl 是 MANO 规范空间原点在相机坐标系中的位置
+                # 我们需要将其转换为手腕在相机坐标系中的位置
+                # 数学公式: transl_wrist = transl_mano_origin + R @ wrist
+                # 其中 R 是 global_orient，wrist 需要先旋转到相机坐标系
+                wrist_rotated = torch.matmul(global_orient, wrist.unsqueeze(-1)).squeeze(-1)  # (1, 3)
+                transl_aligned = transl + wrist_rotated  # (1, 3)
                 
                 # 深拷贝结果并更新位移和关节点
                 result_aligned = copy.deepcopy(result)
@@ -146,7 +151,6 @@ class HandReconstructorWithKnownCamera:
                 
                 # 保存关节点数据（相机坐标系）
                 # 关节点需要应用全局旋转和位移才能得到相机坐标系下的位置
-                global_orient = torch.from_numpy(result['global_orient']).unsqueeze(0).to(self.device)  # (1, 3, 3)
                 joints_camspace = torch.matmul(global_orient, joints.unsqueeze(-1)).squeeze(-1) + transl_aligned  # (21, 3)
                 result_aligned['joints'] = joints_camspace.cpu().numpy()  # (21, 3)
                 
